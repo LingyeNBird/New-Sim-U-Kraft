@@ -1,0 +1,336 @@
+package com.xiaoliang.simukraft.event;
+
+import com.xiaoliang.simukraft.Simukraft;
+import com.xiaoliang.simukraft.client.gui.CommercialClientData;
+import com.xiaoliang.simukraft.client.gui.IndustrialClientData;
+import com.xiaoliang.simukraft.employment.client.WorkBlockHireClientCache;
+import com.xiaoliang.simukraft.employment.domain.EmploymentAssignment;
+import com.xiaoliang.simukraft.employment.domain.WorkBlockType;
+import com.xiaoliang.simukraft.entity.CustomEntity;
+import com.xiaoliang.simukraft.entity.Gender;
+import com.xiaoliang.simukraft.entity.WorkStatus;
+import com.xiaoliang.simukraft.init.ModSoundEvents;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
+import net.minecraft.core.BlockPos;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.player.Player;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.api.distmarker.OnlyIn;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+
+import java.util.Map;
+import java.util.UUID;
+
+@Mod.EventBusSubscriber(modid = Simukraft.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+@SuppressWarnings("null")
+public class NPCInteractionHandler {
+
+    @SubscribeEvent
+    public static void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
+        if (event.getTarget() instanceof CustomEntity npc && event.getHand() == InteractionHand.MAIN_HAND) {
+            if (event.getSide().isClient()) {
+                playGenderSound(npc);
+                Player player = event.getEntity();
+                // 潜行时右键永远打开NPC详细信息界面
+                if (player.isShiftKeyDown()) {
+                    openNPCDetailScreen(npc);
+                } else {
+                    openNPCScreen(player, npc);
+                }
+            }
+            event.setCanceled(true);
+        }
+    }
+
+    /**
+     * 处理右键物品事件，防止手持食物等物品右键NPC时被消耗
+     * 在客户端和服务端都执行，确保右键状态正确重置
+     */
+    @SubscribeEvent
+    public static void onRightClickItem(PlayerInteractEvent.RightClickItem event) {
+        if (event.getHand() != InteractionHand.MAIN_HAND) {
+            return;
+        }
+
+        Player player = event.getEntity();
+
+        // 检查玩家是否看向NPC（客户端和服务端都需要检查）
+        net.minecraft.world.phys.EntityHitResult hitResult = net.minecraft.world.entity.projectile.ProjectileUtil.getEntityHitResult(
+            player.level(),
+            player,
+            player.getEyePosition(1.0F),
+            player.getEyePosition(1.0F).add(player.getViewVector(1.0F).scale(5.0)),
+            player.getBoundingBox().expandTowards(player.getViewVector(1.0F).scale(5.0)).inflate(1.0),
+            entity -> entity instanceof CustomEntity && entity.isPickable()
+        );
+
+        if (hitResult != null && hitResult.getEntity() instanceof CustomEntity) {
+            // 玩家看向NPC，取消物品使用
+            // 在客户端和服务端都取消，防止右键长按状态保持
+            event.setCanceled(true);
+
+            // 在客户端额外重置右键状态
+            if (player.level().isClientSide()) {
+                resetPlayerUseItem(player);
+            }
+        }
+    }
+
+    /**
+     * 重置玩家的物品使用状态，防止右键长按保持
+     */
+    @OnlyIn(Dist.CLIENT)
+    private static void resetPlayerUseItem(Player player) {
+        // 停止客户端的物品使用动画
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player != null && minecraft.player.equals(player)) {
+            // 发送停止使用的包到服务端
+            minecraft.gameMode.releaseUsingItem(player);
+        }
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static void openNPCDetailScreen(CustomEntity npc) {
+        Minecraft.getInstance().setScreen(new com.xiaoliang.simukraft.client.gui.NPCCardScreen(npc));
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static void playGenderSound(CustomEntity npc) {
+        Minecraft minecraft = Minecraft.getInstance();
+        SoundEvent sound = npc.getGender() == Gender.FEMALE
+                ? ModSoundEvents.FEMALE_HELLO.get()
+                : ModSoundEvents.MALE_HELLO.get();
+
+        minecraft.getSoundManager().play(
+                SimpleSoundInstance.forUI(
+                        sound,
+                        1.0F,
+                        1.0F
+                )
+        );
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static void openNPCScreen(Player player, CustomEntity npc) {
+        if (npc.getWorkStatus() == WorkStatus.WORKING) {
+            WorkUiContext workUiContext = resolveWorkUiContext(npc);
+            if (workUiContext != null) {
+                if (workUiContext.workBlockType == WorkBlockType.COMMERCIAL_CONTROL_BOX) {
+                    openCommercialTradeSelectScreen(workUiContext.workplacePos, workUiContext.buildingFileName);
+                    return;
+                }
+                if (workUiContext.workBlockType == WorkBlockType.INDUSTRIAL_CONTROL_BOX) {
+                    openIndustrialControlBoxScreen(workUiContext.workplacePos, workUiContext.buildingFileName);
+                    return;
+                }
+            }
+        }
+
+        // 打开普通NPC属性界面
+        openScreenWithReflection(false, npc);
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static void openCommercialTradeSelectScreen(BlockPos workPos, String buildingFileName) {
+        // 打开交易选择界面
+        Minecraft.getInstance().setScreen(
+            new com.xiaoliang.simukraft.client.gui.CommercialTradeSelectScreen(workPos, buildingFileName)
+        );
+
+        // 播放打开界面音效
+        Minecraft.getInstance().getSoundManager().play(
+            net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK,
+                1.0F
+            )
+        );
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static String readCommercialBuildingFileNameFromClient(BlockPos pos) {
+        try {
+            var minecraft = Minecraft.getInstance();
+            if (minecraft.getSingleplayerServer() == null) {
+                return null;
+            }
+            
+            return com.xiaoliang.simukraft.client.utils.ClientFileUtils.readCommercialBuildingFileNameClient(
+                minecraft, pos);
+        } catch (Exception e) {
+            Simukraft.LOGGER.error("[NPCInteractionHandler] 读取建筑文件名失败: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static String readIndustrialBuildingFileNameFromClient(BlockPos pos) {
+        try {
+            var minecraft = Minecraft.getInstance();
+            if (minecraft.getSingleplayerServer() == null) {
+                return null;
+            }
+            return com.xiaoliang.simukraft.utils.FileUtils.readIndustrialBuildingFileNameCached(
+                    minecraft.getSingleplayerServer(), pos);
+        } catch (Exception e) {
+            Simukraft.LOGGER.error("[NPCInteractionHandler] 读取工业建筑文件名失败: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static void openIndustrialControlBoxScreen(BlockPos workPos, String buildingFileName) {
+        Minecraft.getInstance().setScreen(
+                new com.xiaoliang.simukraft.client.gui.IndustrialControlBoxLDLibScreen(workPos, buildingFileName)
+        );
+        Minecraft.getInstance().getSoundManager().play(
+                net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                        net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK,
+                        1.0F
+                )
+        );
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static WorkUiContext resolveWorkUiContext(CustomEntity npc) {
+        EmploymentAssignment assignment = WorkBlockHireClientCache.findByNpc(npc.getUUID()).orElse(null);
+        if (assignment != null) {
+            String buildingFileName = switch (assignment.workBlockType()) {
+                case COMMERCIAL_CONTROL_BOX -> resolveCommercialBuildingFileName(assignment.workplacePos());
+                case INDUSTRIAL_CONTROL_BOX -> resolveIndustrialBuildingFileName(assignment.workplacePos());
+                default -> "";
+            };
+            if (assignment.workBlockType() == WorkBlockType.COMMERCIAL_CONTROL_BOX
+                    || assignment.workBlockType() == WorkBlockType.INDUSTRIAL_CONTROL_BOX) {
+                return new WorkUiContext(assignment.workBlockType(), assignment.workplacePos(), buildingFileName);
+            }
+        }
+
+        WorkUiContext commercialFallback = findCommercialWorkUiContext(npc);
+        if (commercialFallback != null) {
+            return commercialFallback;
+        }
+
+        return findIndustrialWorkUiContext(npc);
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static WorkUiContext findCommercialWorkUiContext(CustomEntity npc) {
+        UUID npcUuid = npc.getUUID();
+        Map<BlockPos, CommercialClientData.HireInfo> allHires = CommercialClientData.getAllHiredEmployeeUuids();
+        for (Map.Entry<BlockPos, CommercialClientData.HireInfo> entry : allHires.entrySet()) {
+            CommercialClientData.HireInfo hireInfo = entry.getValue();
+            if (hireInfo.getNpcUuid().equals(npcUuid)) {
+                String buildingFileName = hireInfo.getBuildingFileName();
+                if (buildingFileName == null || buildingFileName.isEmpty()) {
+                    buildingFileName = readCommercialBuildingFileNameFromClient(entry.getKey());
+                }
+                return new WorkUiContext(WorkBlockType.COMMERCIAL_CONTROL_BOX, entry.getKey(), buildingFileName);
+            }
+        }
+        return null;
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static WorkUiContext findIndustrialWorkUiContext(CustomEntity npc) {
+        UUID npcUuid = npc.getUUID();
+        Map<BlockPos, IndustrialClientData.HireInfo> allHires = IndustrialClientData.getAllHiredEmployeeUuids();
+        for (Map.Entry<BlockPos, IndustrialClientData.HireInfo> entry : allHires.entrySet()) {
+            IndustrialClientData.HireInfo hireInfo = entry.getValue();
+            if (hireInfo.getNpcUuid().equals(npcUuid)) {
+                String buildingFileName = hireInfo.getBuildingFileName();
+                if (buildingFileName == null || buildingFileName.isEmpty()) {
+                    buildingFileName = readIndustrialBuildingFileNameFromClient(entry.getKey());
+                }
+                return new WorkUiContext(WorkBlockType.INDUSTRIAL_CONTROL_BOX, entry.getKey(), buildingFileName);
+            }
+        }
+        return null;
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static String resolveCommercialBuildingFileName(BlockPos pos) {
+        if (pos == null) {
+            return "";
+        }
+        String buildingFileName = CommercialClientData.getAllHiredEmployeeUuids()
+                .getOrDefault(pos, new CommercialClientData.HireInfo(null, "", ""))
+                .getBuildingFileName();
+        return (buildingFileName == null || buildingFileName.isEmpty())
+                ? readCommercialBuildingFileNameFromClient(pos)
+                : buildingFileName;
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static String resolveIndustrialBuildingFileName(BlockPos pos) {
+        if (pos == null) {
+            return "";
+        }
+        String buildingFileName = IndustrialClientData.getAllHiredEmployeeUuids()
+                .getOrDefault(pos, new IndustrialClientData.HireInfo(null, "", ""))
+                .getBuildingFileName();
+        return (buildingFileName == null || buildingFileName.isEmpty())
+                ? readIndustrialBuildingFileNameFromClient(pos)
+                : buildingFileName;
+    }
+    
+    @OnlyIn(Dist.CLIENT)
+    private static void openCommercialBuyScreen(CustomEntity npc, String buildingFileName) {
+        try {
+            Minecraft minecraft = Minecraft.getInstance();
+            Class<?> screenClass = Class.forName("com.xiaoliang.simukraft.client.gui.CommercialBuyScreen");
+            
+            // 获取NPC的工作位置
+            BlockPos workPos = getNPCWorkPosition(npc);
+            if (workPos == null) {
+                workPos = npc.blockPosition();
+            }
+            
+            Object screen = screenClass.getConstructor(BlockPos.class, String.class)
+                .newInstance(workPos, buildingFileName);
+            minecraft.setScreen((net.minecraft.client.gui.screens.Screen) screen);
+        } catch (Exception e) {
+            Simukraft.LOGGER.error("[NPCInteractionHandler] 打开购买界面失败: {}", e.getMessage());
+            // 如果打开购买界面失败，回退到普通界面
+            openScreenWithReflection(false, npc);
+        }
+    }
+    
+    @OnlyIn(Dist.CLIENT)
+    private static BlockPos getNPCWorkPosition(CustomEntity npc) {
+        UUID npcUuid = npc.getUUID();
+        
+        Map<BlockPos, CommercialClientData.HireInfo> allHires = CommercialClientData.getAllHiredEmployeeUuids();
+        
+        for (Map.Entry<BlockPos, CommercialClientData.HireInfo> entry : allHires.entrySet()) {
+            if (entry.getValue().getNpcUuid().equals(npcUuid)) {
+                return entry.getKey();
+            }
+        }
+        
+        return null;
+    }
+    
+    @OnlyIn(Dist.CLIENT)
+    private static void openScreenWithReflection(boolean isBuildingMaterialStoreEmployee, CustomEntity npc) {
+        try {
+            Minecraft minecraft = Minecraft.getInstance();
+            
+            if (isBuildingMaterialStoreEmployee) {
+                Class<?> screenClass = Class.forName("com.xiaoliang.simukraft.client.gui.BuildingMaterialStoreNPCScreen");
+                Object screen = screenClass.getConstructor(CustomEntity.class).newInstance(npc);
+                minecraft.setScreen((net.minecraft.client.gui.screens.Screen) screen);
+            } else {
+                minecraft.setScreen(new com.xiaoliang.simukraft.client.gui.NPCCardScreen(npc));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private record WorkUiContext(WorkBlockType workBlockType, BlockPos workplacePos, String buildingFileName) {
+    }
+}

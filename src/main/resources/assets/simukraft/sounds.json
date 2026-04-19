@@ -1,0 +1,92 @@
+{
+  "voice.male_hello": {
+    "subtitle": "simukraft.subtitle.male_hello",
+    "sounds": [
+      "minecraft:entity.villager.ambient"
+    ]
+  },
+  "voice.female_hello": {
+    "subtitle": "simukraft.subtitle.female_hello",
+    "sounds": [
+      "minecraft:entity.villager.ambient"
+    ]
+  },
+  "voice.male_hurt": {
+    "subtitle": "simukraft.subtitle.male_hurt",
+    "sounds": [
+      "minecraft:entity.villager.hurt"
+    ]
+  },
+  "voice.female_hurt": {
+    "subtitle": "simukraft.subtitle.female_hurt",
+    "sounds": [
+      "minecraft:entity.villager.hurt"
+    ]
+  },
+  "block.build_box.place": {
+    "subtitle": "simukraft.subtitle.build_box.place",
+    "sounds": [
+      "simukraft:block/build_box_place"
+    ]
+  },
+  "block.build_box.break": {
+    "subtitle": "simukraft.subtitle.build_box.break",
+    "sounds": [
+      "simukraft:block/build_box_break"
+    ]
+  },
+  "ui.build_box.open": {
+    "subtitle": "simukraft.subtitle.build_box.open",
+    "sounds": [
+      "simukraft:ui/build_box_open"
+    ]
+  },
+  "ui.city_core.open": {
+    "subtitle": "simukraft.subtitle.city_core.open",
+    "sounds": [
+      "simukraft:ui/city_core_open"
+    ]
+  },
+  "construction.complete": {
+    "subtitle": "simukraft.subtitle.construction.complete",
+    "sounds": [
+      "simukraft:construction/complete"
+    ]
+  },
+  "player.wake_up": {
+    "subtitle": "simukraft.subtitle.player.wake_up",
+    "sounds": [
+      "simukraft:player/wake_up"
+    ]
+  },
+  "money.collect": {
+    "subtitle": "simukraft.subtitle.money.collect",
+    "sounds": [
+      "simukraft:money/collect"
+    ]
+  },
+  "construction.start": {
+    "subtitle": "simukraft.subtitle.construction.start",
+    "sounds": [
+      "simukraft:construction/start"
+    ]
+  },
+  "block.farmland_box.place": {
+    "subtitle": "simukraft.subtitle.farmland_box.place",
+    "sounds": [
+      "simukraft:block/farmland_box_place"
+    ]
+  },
+  "block.farmland_box.break": {
+    "subtitle": "simukraft.subtitle.farmland_box.break",
+    "sounds": [
+      "simukraft:block/build_box_break"
+    ]
+  },
+  "music.first_dream": {
+    "subtitle": "simukraft.subtitle.music.first_dream",
+    "sounds": [
+      "simukraft:music/first_dream"
+    ]
+  }
+}

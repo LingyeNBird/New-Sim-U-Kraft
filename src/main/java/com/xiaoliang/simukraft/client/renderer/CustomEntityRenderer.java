@@ -1,0 +1,180 @@
+package com.xiaoliang.simukraft.client.renderer;
+
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.xiaoliang.simukraft.client.ModModelLayers;
+import com.xiaoliang.simukraft.client.model.CustomEntityModel;
+import com.xiaoliang.simukraft.entity.CustomEntity;
+import com.xiaoliang.simukraft.entity.Gender;
+import com.xiaoliang.simukraft.utils.SkinManager;
+import net.minecraft.client.Camera;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.entity.EntityRendererProvider;
+import net.minecraft.client.renderer.entity.MobRenderer;
+import net.minecraft.client.renderer.entity.layers.ItemInHandLayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import org.joml.Matrix4f;
+
+import javax.annotation.Nonnull;
+
+@SuppressWarnings("null")
+public class CustomEntityRenderer extends MobRenderer<CustomEntity, CustomEntityModel<CustomEntity>> {
+
+    public CustomEntityRenderer(EntityRendererProvider.Context context) {
+        super(context, new CustomEntityModel<>(context.bakeLayer(ModModelLayers.CUSTOM_ENTITY), false), 0.5f);
+        this.addLayer(new ItemInHandLayer<>(this, context.getItemInHandRenderer()));
+    }
+
+    @Override
+    public ResourceLocation getTextureLocation(@Nonnull CustomEntity entity) {
+        String skinPath = entity.getSkinPath();
+        Gender gender = entity.getGender();
+
+        // 使用SkinManager获取有效的纹理资源位置
+        if (skinPath != null && !skinPath.isEmpty() && SkinManager.isValidSkinPath(skinPath)) {
+            return SkinManager.getTextureResourceLocation(skinPath);
+        }
+
+        // 如果皮肤路径无效，使用默认皮肤
+        if (gender == Gender.FEMALE) {
+            return SkinManager.getTextureResourceLocation(SkinManager.getDefaultSkinPath(Gender.FEMALE));
+        } else {
+            return SkinManager.getTextureResourceLocation(SkinManager.getDefaultSkinPath(Gender.MALE));
+        }
+    }
+
+    @Override
+    protected void renderNameTag(@Nonnull CustomEntity entity, @Nonnull Component component, @Nonnull PoseStack poseStack,
+                                 @Nonnull MultiBufferSource bufferSource, int packedLight) {
+
+        if (shouldShowName(entity)) {
+            // 基于实体高度抬升标签，增加高度避免与头部重叠
+            double nameOffset = entity.getBbHeight() + 0.5D;
+            
+            // 第三行（最下面）：饱食度状态标签（始终显示，亮黄色）
+            Component hungerLine = buildHungerAlertLine(entity);
+            poseStack.pushPose();
+            poseStack.translate(0.0, nameOffset, 0.0);
+            poseStack.scale(0.75F, 0.75F, 0.75F);
+            renderTransparentNameTag(entity, hungerLine, poseStack, bufferSource, packedLight, 0xFFFF00);
+            poseStack.popPose();
+            
+            // 第二行：工作状态标签（始终显示，亮黄色）
+            Component workStatusLine = buildWorkStatusLine(entity);
+            poseStack.pushPose();
+            poseStack.translate(0.0, nameOffset + 0.22D, 0.0);
+            poseStack.scale(0.75F, 0.75F, 0.75F);
+            renderTransparentNameTag(entity, workStatusLine, poseStack, bufferSource, packedLight, 0xFFFF00);
+            poseStack.popPose();
+            
+            // 第一行（最上面）：名字（白色）
+            poseStack.pushPose();
+            poseStack.translate(0.0, nameOffset + 0.44D, 0.0);
+            renderTransparentNameTag(entity, component, poseStack, bufferSource, packedLight, 0xFFFFFF);
+            poseStack.popPose();
+        }
+    }
+    
+    private static Component buildWorkStatusLine(CustomEntity entity) {
+        // 根据工作状态显示不同文本，始终显示
+        com.xiaoliang.simukraft.entity.WorkStatus status = entity.getWorkStatus();
+        com.xiaoliang.simukraft.entity.WorkSubState subState = entity.getWorkSubState();
+        
+        // 优先检查子状态（下班）
+        if (subState == com.xiaoliang.simukraft.entity.WorkSubState.RESTING) {
+            return Component.literal("下班在家");
+        }
+        
+        // 根据主状态显示
+        if (status == com.xiaoliang.simukraft.entity.WorkStatus.WORKING) {
+            return Component.literal("工作中");
+        } else {
+            return Component.literal("空闲");
+        }
+    }
+    
+    private static Component buildHungerAlertLine(CustomEntity entity) {
+        // 使用与 CustomEntity.getHungerLevelKey() 相同的阈值逻辑
+        String hungerKey = entity.getHungerLevelKey();
+        return Component.translatable(hungerKey);
+    }
+
+    private void renderTransparentNameTag(CustomEntity entity, Component component, PoseStack poseStack,
+                                      MultiBufferSource bufferSource, int packedLight, int color) {
+        double d0 = this.entityRenderDispatcher.distanceToSqr(entity);
+        if (d0 > 4096.0) {
+            return;
+        }
+    
+
+        boolean flag = !entity.isDiscrete();
+        // 外层renderNameTag已经计算并应用了标签高度，这里不再重复叠加偏移
+        float f = 0.0F;
+        int i = "deadmau5".equals(component.getString()) ? -10 : 0;
+    
+        poseStack.pushPose();
+        poseStack.translate(0.0, f, 0.0);
+        poseStack.mulPose(this.entityRenderDispatcher.cameraOrientation());
+        poseStack.scale(-0.025F, -0.025F, 0.025F);
+    
+        Matrix4f matrix4f = poseStack.last().pose();
+        
+        // 调整背景不透明度为30%（0.3f），让背景更透明一些
+        float backgroundOpacity = 0.3f; // 30% 不透明度（更透明）
+        int backgroundColor = (int)(backgroundOpacity * 255.0F) << 24;
+    
+        float f2 = (float)(-Minecraft.getInstance().font.width(component) / 2);
+    
+        // 使用SEE_THROUGH模式绘制带背景的文本
+        // 这会自动添加黑色透明背景，不受游戏设置影响
+        Minecraft.getInstance().font.drawInBatch(component, f2, (float)i, color, false, matrix4f, bufferSource,
+                Font.DisplayMode.SEE_THROUGH, backgroundColor, packedLight);
+    
+        if (flag) {
+            // 正常模式绘制文本（无背景）
+            Minecraft.getInstance().font.drawInBatch(component, f2, (float)i, color, false, matrix4f, bufferSource,
+                    Font.DisplayMode.NORMAL, 0, packedLight);
+        }
+    
+        poseStack.popPose();
+    }
+
+    @Override
+    public void render(@Nonnull CustomEntity entity, float entityYaw, float partialTicks, @Nonnull PoseStack poseStack,
+                       @Nonnull MultiBufferSource buffer, int packedLight) {
+        // 如果NPC处于不可见状态（传送中），跳过所有层的渲染（包括手持物品）
+        if (entity.isInvisible()) {
+            // 只执行基本的实体渲染，不渲染层
+            renderInvisibleEntity(entity, entityYaw, partialTicks, poseStack, buffer, packedLight);
+            return;
+        }
+        super.render(entity, entityYaw, partialTicks, poseStack, buffer, packedLight);
+    }
+    
+    /**
+     * 渲染不可见的实体，跳过所有层的渲染（用于传送时隐藏手持物品和头顶标签）
+     */
+    private void renderInvisibleEntity(@Nonnull CustomEntity entity, float entityYaw, float partialTicks, 
+                                        @Nonnull PoseStack poseStack, @Nonnull MultiBufferSource buffer, int packedLight) {
+        // NPC处于不可见状态，不需要渲染任何内容
+        // 这个方法被调用时，entity.isInvisible()返回true
+        // 因此不需要渲染实体本身、手持物品或头顶标签
+        // 所有内容都会在NPC重新可见时恢复显示
+    }
+
+    @Override
+    protected boolean shouldShowName(@Nonnull CustomEntity entity) {
+        // 如果NPC处于不可见状态（传送中），不显示头顶标签
+        if (entity.isInvisible()) {
+            return false;
+        }
+        
+        Camera camera = this.entityRenderDispatcher.camera;
+        if (camera == null) return false;
+
+        double distance = camera.getPosition().distanceTo(entity.position());
+        return distance < 45.0 || entity.hasCustomName() && entity == camera.getEntity();
+    }
+}

@@ -1,0 +1,43 @@
+{
+  "buildingId": "alpha",
+  "buildingName": "aaa测试",
+  "jobType": "alpha",
+  "jobName": "测试职业",
+  "shopMode": "MIXED",
+  "heldItem": "minecraft:birch_planks",
+  "workTime": {
+    "start": 100,
+    "end": 12000
+  },
+  "restockInterval": 24000,
+  "trades": [
+    {
+      "item": "minecraft:coarse_dirt",
+      "sellPrice": 1.0,
+      "maxStock": 64,
+      "restockAmount": 16,
+      "retail": true
+    },
+    {
+      "item": "minecraft:bamboo_mosaic",
+      "sellPrice": 1.0,
+      "maxStock": 64,
+      "restockAmount": 16,
+      "retail": true
+    }
+  ],
+  "buyTrades": [
+    {
+      "item": "minecraft:vindicator_spawn_egg",
+      "buyPrice": 1.0,
+      "maxBuyAmount": 64
+    }
+  ],
+  "messages": {
+    "welcome": "欢迎光临！",
+    "noStock": "库存不足！",
+    "restocked": "补货完成！",
+    "workStart": "开始工作！",
+    "workEnd": "工作结束！"
+  }
+}

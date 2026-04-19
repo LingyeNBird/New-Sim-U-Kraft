@@ -1,0 +1,81 @@
+package com.xiaoliang.simukraft.network;
+
+import com.xiaoliang.simukraft.Simukraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraftforge.network.NetworkEvent;
+
+import java.util.Objects;
+import java.util.function.Supplier;
+
+/**
+ * 设置农田盒配置数据包
+ * 用于将客户端的作物选择和区域选择同步到服务器
+ */
+public class SetFarmlandConfigPacket {
+    private final BlockPos farmlandBoxPos;
+    private final String crop;
+    private final int areaSize;
+    private final boolean hasCrop;
+    private final boolean hasArea;
+
+    public SetFarmlandConfigPacket(BlockPos farmlandBoxPos, String crop, int areaSize) {
+        this.farmlandBoxPos = farmlandBoxPos;
+        this.crop = crop;
+        this.areaSize = areaSize;
+        this.hasCrop = crop != null;
+        this.hasArea = areaSize > 0;
+    }
+
+    public SetFarmlandConfigPacket(FriendlyByteBuf buf) {
+        this.farmlandBoxPos = Objects.requireNonNull(buf.readBlockPos());
+        this.hasCrop = buf.readBoolean();
+        this.crop = hasCrop ? Objects.requireNonNull(buf.readUtf()) : null;
+        this.hasArea = buf.readBoolean();
+        this.areaSize = hasArea ? buf.readInt() : 0;
+    }
+
+    public void encode(FriendlyByteBuf buf) {
+        buf.writeBlockPos(Objects.requireNonNull(farmlandBoxPos));
+        buf.writeBoolean(hasCrop);
+        if (hasCrop) {
+            buf.writeUtf(Objects.requireNonNull(crop));
+        }
+        buf.writeBoolean(hasArea);
+        if (hasArea) {
+            buf.writeInt(areaSize);
+        }
+    }
+
+    public static void handle(SetFarmlandConfigPacket packet, Supplier<NetworkEvent.Context> supplier) {
+        NetworkEvent.Context context = supplier.get();
+        context.enqueueWork(() -> {
+            ServerPlayer player = context.getSender();
+            if (player != null) {
+                Simukraft.LOGGER.info("[SetFarmlandConfigPacket] Received config for farmland box at {} - Crop: {}, Area: {}",
+                        packet.farmlandBoxPos, packet.crop, packet.areaSize);
+
+                // 先加载现有数据，确保雇佣数据不丢失
+                com.xiaoliang.simukraft.world.FarmlandHiredData.loadAllFarmlandData(player.server);
+
+                // 在服务器端保存配置数据
+                if (packet.hasCrop) {
+                    com.xiaoliang.simukraft.world.FarmlandHiredData.setSelectedCrop(packet.farmlandBoxPos, packet.crop);
+                }
+                if (packet.hasArea) {
+                    com.xiaoliang.simukraft.world.FarmlandHiredData.setSelectedArea(packet.farmlandBoxPos, packet.areaSize);
+                }
+
+                // 立即保存到文件
+                try {
+                    com.xiaoliang.simukraft.world.FarmlandHiredData.saveAllFarmlandData(player.server);
+                    Simukraft.LOGGER.info("[SetFarmlandConfigPacket] Config saved to server");
+                } catch (Exception e) {
+                    Simukraft.LOGGER.error("[SetFarmlandConfigPacket] Failed to save config: {}", e.getMessage());
+                }
+            }
+        });
+        context.setPacketHandled(true);
+    }
+}

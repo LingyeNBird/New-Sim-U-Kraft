@@ -1,0 +1,276 @@
+package com.xiaoliang.simukraft.block;
+
+import com.xiaoliang.simukraft.building.ControlBoxDataManager;
+import com.xiaoliang.simukraft.building.ConstructionBoxMapping;
+import com.xiaoliang.simukraft.employment.service.EmploymentCommands;
+import com.xiaoliang.simukraft.employment.service.EmploymentServices;
+import com.xiaoliang.simukraft.entity.WorkStatus;
+import com.xiaoliang.simukraft.network.NPCWorkStatusPacket;
+import com.xiaoliang.simukraft.network.NetworkManager;
+import com.xiaoliang.simukraft.utils.BuildingDataManager;
+import com.xiaoliang.simukraft.utils.ClientRuntimeBridge;
+import com.xiaoliang.simukraft.world.CityData;
+import com.xiaoliang.simukraft.world.CommercialHiredData;
+import com.xiaoliang.simukraft.world.ConstructionBoxData;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.material.MapColor;
+import net.minecraft.world.level.storage.LevelResource;
+import net.minecraft.world.phys.BlockHitResult;
+
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
+import javax.annotation.Nonnull;
+
+public class CommercialControlBoxBlock extends Block {
+    public CommercialControlBoxBlock() {
+        super(BlockBehaviour.Properties.of()
+                .mapColor(Objects.requireNonNull(MapColor.METAL))
+                .strength(1.0F)
+                .sound(Objects.requireNonNull(SoundType.METAL)));
+    }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onPlace(@Nonnull BlockState state, @Nonnull Level level, @Nonnull BlockPos pos, @Nonnull BlockState oldState, boolean isMoving) {
+        super.onPlace(
+                Objects.requireNonNull(state),
+                Objects.requireNonNull(level),
+                Objects.requireNonNull(pos),
+                Objects.requireNonNull(oldState),
+                isMoving
+        );
+
+        if (!level.isClientSide && !oldState.is(Objects.requireNonNull(state.getBlock()))) {
+            MinecraftServer server = level.getServer();
+            if (server != null) {
+                // 从ConstructionBoxMapping获取建筑文件名和城市ID
+                ConstructionBoxData.BoxInfo boxInfo = ConstructionBoxMapping.getBoxInfo(level, pos);
+                String buildingFileName = boxInfo != null ? boxInfo.buildingFileName : "unknown";
+                UUID cityId = boxInfo != null ? boxInfo.cityId : null;
+
+                // 从BuildingDataManager获取建筑信息(包括job_type)
+                BuildingDataManager.BuildingInfo buildingInfo = BuildingDataManager.getBuildingInfo("commercial", buildingFileName + ".sk");
+                String jobType = buildingInfo != null ? buildingInfo.getJobType() : null;
+
+                // 创建商业建筑数据文件到 simukraft/commercial/ 目录
+                ControlBoxDataManager.writeCommercialControlBox(server, pos, buildingFileName, null, cityId);
+
+                // 存储额外的商业建筑信息到商业数据文件
+                writeCommercialJobType(server, pos, buildingFileName, jobType, cityId);
+
+                // 移除已处理的控制盒
+                ConstructionBoxMapping.removePendingBox(level, pos);
+
+                System.out.println("[CommercialControlBoxBlock] 商业控制盒已放置: " + pos + 
+                    ", 建筑: " + buildingFileName + 
+                    ", 职业: " + (jobType != null ? jobType : "未指定") +
+                    ", 城市: " + (cityId != null ? cityId.toString().substring(0, 8) : "未指定"));
+            }
+        }
+    }
+
+    /**
+     * 写入商业建筑的job_type信息到数据文件
+     */
+    private void writeCommercialJobType(MinecraftServer server, BlockPos pos, String buildingFileName, String jobType, UUID cityId) {
+        try {
+            Path worldPath = server.getWorldPath(Objects.requireNonNull(LevelResource.ROOT));
+            Path commercialDir = worldPath.resolve("simukraft").resolve("commercial");
+            Files.createDirectories(commercialDir);
+
+            // 文件名：x_y_z.sk
+            String fileName = pos.getX() + "_" + pos.getY() + "_" + pos.getZ() + ".sk";
+            Path skFile = commercialDir.resolve(fileName);
+
+            // 从建筑配置文件读取租金（amount字段）
+            double rent = com.xiaoliang.simukraft.building.ControlBoxDataManager.getRentFromSkFile(buildingFileName, "commercial");
+
+            // 使用UTF-8编码写入文件
+            try (BufferedWriter writer = Files.newBufferedWriter(skFile, Charset.forName("UTF-8"))) {
+                writer.write("position: " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + "\n");
+                writer.write("type: commercial_control_box\n");
+                writer.write("world: " + worldPath.getFileName().toString() + "\n");
+                writer.write("building_file_name: " + buildingFileName + "\n");
+                // 写入租金（amount字段，用于企业税计算）
+                writer.write(String.format(java.util.Locale.US, "amount: %.2f元\n", rent));
+                if (jobType != null && !jobType.isEmpty()) {
+                    writer.write("job_type: " + jobType + "\n");
+                }
+                if (cityId != null) {
+                    writer.write("cityid: " + cityId.toString() + "\n");
+                }
+            }
+
+            System.out.println("[CommercialControlBoxBlock] 写入商业建筑数据: " + skFile.toAbsolutePath() +
+                ", 建筑: " + buildingFileName + ", 职业: " + (jobType != null ? jobType : "未指定") + ", 租金: " + String.format(java.util.Locale.US, "%.2f", rent) + "元");
+
+        } catch (IOException e) {
+            System.err.println("[CommercialControlBoxBlock] 写入商业建筑数据失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public @Nonnull InteractionResult use(@Nonnull BlockState state, @Nonnull Level level, @Nonnull BlockPos pos, @Nonnull Player player, @Nonnull InteractionHand hand, @Nonnull BlockHitResult hit) {
+        if (level.isClientSide) {
+            try {
+                // 从本地数据文件读取建筑文件名
+                String buildingFileName = readBuildingFileNameFromLocal(pos);
+                ClientRuntimeBridge.openScreen(
+                        "com.xiaoliang.simukraft.client.gui.CommercialControlBoxScreen",
+                        new Class<?>[]{BlockPos.class, String.class},
+                        pos,
+                        buildingFileName
+                );
+            } catch (Exception e) {
+                System.err.println("[CommercialControlBoxBlock] 打开界面失败: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+        return Objects.requireNonNull(InteractionResult.sidedSuccess(level.isClientSide));
+    }
+
+    /**
+     * 从本地商业建筑数据文件读取建筑文件名
+     */
+    private String readBuildingFileNameFromLocal(BlockPos pos) {
+        try {
+            MinecraftServer singleplayerServer = ClientRuntimeBridge.getSingleplayerServer();
+            if (singleplayerServer == null) {
+                return "unknown";
+            }
+
+            java.nio.file.Path worldPath = singleplayerServer.getWorldPath(Objects.requireNonNull(net.minecraft.world.level.storage.LevelResource.ROOT));
+            java.nio.file.Path commercialDir = worldPath.resolve("simukraft").resolve("commercial");
+            String fileName = pos.getX() + "_" + pos.getY() + "_" + pos.getZ() + ".sk";
+            java.nio.file.Path skFile = commercialDir.resolve(fileName);
+
+            if (java.nio.file.Files.exists(skFile)) {
+                java.util.List<String> lines = java.nio.file.Files.readAllLines(skFile, java.nio.charset.Charset.forName("UTF-8"));
+                for (String line : lines) {
+                    line = line.trim();
+                    if (line.startsWith("building_file_name:")) {
+                        return line.substring(19).trim();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[CommercialControlBoxBlock] 读取建筑文件名失败: " + e.getMessage());
+        }
+        return "unknown";
+    }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onRemove(@Nonnull BlockState state, @Nonnull Level level, @Nonnull BlockPos pos, @Nonnull BlockState newState, boolean isMoving) {
+        if (state.is(Objects.requireNonNull(newState.getBlock()))) {
+            super.onRemove(state, level, pos, newState, isMoving);
+            return;
+        }
+
+        if (!level.isClientSide && level instanceof ServerLevel serverLevel) {
+            MinecraftServer server = serverLevel.getServer();
+
+            var releaseResult = EmploymentServices.get(server).onWorkBlockRemoved(
+                    new EmploymentCommands.WorkBlockRemovedCommand(serverLevel.dimension().location().toString(), pos)
+            );
+            if (releaseResult.success() && releaseResult.assignment() != null) {
+                NetworkManager.sendToAll(new com.xiaoliang.simukraft.network.EmploymentStateChangedPacket(releaseResult.assignment()), serverLevel);
+            }
+
+            // 从 CommercialHiredData 加载雇佣信息
+            Map<BlockPos, CommercialHiredData.CommercialHireInfo> hiredEmployees = CommercialHiredData.loadHiredEmployees(server);
+
+            if (hiredEmployees.containsKey(pos)) {
+                CommercialHiredData.CommercialHireInfo hireInfo = hiredEmployees.get(pos);
+                UUID npcUuid = hireInfo.getNpcUuid();
+
+                // 查找对应的NPC实体
+                var npc = CommercialHiredData.findNPCByUuid(server, npcUuid);
+                if (npc != null) {
+                    // 重置NPC状态为空闲
+                    npc.setWorkStatus(WorkStatus.IDLE);
+                    npc.resetToIdle();
+
+                    // 获取NPC雇佣信息以确定城市
+                    UUID npcCityId = null;
+                    CityData cityData = CityData.get(serverLevel);
+                    for (CityData.CityInfo city : cityData.getAllCities()) {
+                        if (city.getCitizenIds().contains(npcUuid)) {
+                            npcCityId = city.getCityId();
+                            break;
+                        }
+                    }
+
+                    // 发送解雇数据包给所有玩家
+                    server.getPlayerList().getPlayers().forEach(p -> {
+                        NetworkManager.sendToPlayer(
+                            new NPCWorkStatusPacket(npc.getUUID(), WorkStatus.IDLE, pos),
+                            p
+                        );
+                    });
+
+                    // 发送聊天提示（通过通知接口，按城市过滤）
+                    String npcName = npc.getFullName();
+                    if (npcCityId != null) {
+                        com.xiaoliang.simukraft.utils.CityMessageUtils.sendToCityGroup(
+                            server, npcCityId,
+                            net.minecraft.network.chat.Component.translatable("message.simukraft.commercial_control_box.destroyed", npcName)
+                        );
+                    }
+                }
+
+                // 从雇佣记录中移除
+                hiredEmployees.remove(pos);
+                CommercialHiredData.saveHiredEmployees(server, hiredEmployees);
+            }
+
+            // 删除对应的商业建筑数据文件
+            deleteCommercialDataFile(server, pos);
+
+            // 使用ControlBoxDataManager删除控制盒数据
+            ControlBoxDataManager.deleteControlBox(server, pos, "commercial_control_box");
+        }
+        super.onRemove(
+                Objects.requireNonNull(state),
+                Objects.requireNonNull(level),
+                Objects.requireNonNull(pos),
+                Objects.requireNonNull(newState),
+                isMoving
+        );
+    }
+
+    /**
+     * 删除商业建筑数据文件
+     */
+    private void deleteCommercialDataFile(MinecraftServer server, BlockPos pos) {
+        try {
+            Path worldPath = server.getWorldPath(Objects.requireNonNull(LevelResource.ROOT));
+            Path commercialDir = worldPath.resolve("simukraft").resolve("commercial");
+            String fileName = pos.getX() + "_" + pos.getY() + "_" + pos.getZ() + ".sk";
+            Path skFile = commercialDir.resolve(fileName);
+
+            if (Files.exists(skFile)) {
+                Files.delete(skFile);
+                System.out.println("[CommercialControlBoxBlock] 删除商业建筑数据文件: " + skFile.toAbsolutePath());
+            }
+        } catch (Exception e) {
+            System.err.println("[CommercialControlBoxBlock] 删除商业建筑数据文件失败: " + e.getMessage());
+        }
+    }
+}

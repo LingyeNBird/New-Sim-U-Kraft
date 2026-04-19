@@ -10,6 +10,7 @@ import com.xiaoliang.simukraft.world.PopulationData;
 import com.xiaoliang.simukraft.world.SimukraftWorldData;
 import net.minecraft.advancements.Advancement;
 import net.minecraft.advancements.AdvancementProgress;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -17,6 +18,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
@@ -36,6 +38,7 @@ public class PlayerEvents {
     private static final ResourceLocation FIRST_DREAM_ADVANCEMENT_ID =
             ResourceLocation.fromNamespaceAndPath(Simukraft.MOD_ID, "story/first_dream");
     private static final String FIRST_DREAM_CRITERION = "first_join";
+    private static final String FIRST_DREAM_PLAYED_TAG = "simukraft_first_dream_played";
     // first_dream.ogg 当前时长约 11 秒，换算为 220 tick
     private static final int FIRST_DREAM_SOUND_DURATION_TICKS = 220;
     private static final Map<UUID, Integer> PENDING_FIRST_DREAM = new ConcurrentHashMap<>();
@@ -85,6 +88,8 @@ public class PlayerEvents {
                     
                     // 发送HUD数据同步包
                     NetworkManager.sendHUDDataToPlayer(currentDay, worldPopulation, cityName, cityFunds, cityPopulation, player);
+
+                    maybeOpenFirstWorldModeSelection(player, worldData);
                     
                     // 同步所有城市区块数据（供地图高亮显示）
                     NetworkManager.broadcastAllCityChunks(server);
@@ -133,6 +138,10 @@ public class PlayerEvents {
     }
 
     private static void scheduleFirstDreamAdvancement(ServerPlayer player) {
+        if (hasPlayedFirstDream(player) || PENDING_FIRST_DREAM.containsKey(player.getUUID())) {
+            return;
+        }
+
         Advancement advancement = player.server.getAdvancements().getAdvancement(FIRST_DREAM_ADVANCEMENT_ID);
         if (advancement == null) {
             LOGGER.warn("Missing advancement: {}", FIRST_DREAM_ADVANCEMENT_ID);
@@ -140,13 +149,22 @@ public class PlayerEvents {
         }
 
         AdvancementProgress progress = player.getAdvancements().getOrStartProgress(advancement);
-        if (progress.isDone() || PENDING_FIRST_DREAM.containsKey(player.getUUID())) {
+        if (progress.isDone()) {
+            markFirstDreamPlayed(player);
             return;
         }
 
         SoundEvent sound = ModSoundEvents.FIRST_DREAM.get();
         player.playNotifySound(sound, SoundSource.MUSIC, 1.0F, 1.0F);
         PENDING_FIRST_DREAM.put(player.getUUID(), FIRST_DREAM_SOUND_DURATION_TICKS);
+    }
+
+    private static void maybeOpenFirstWorldModeSelection(ServerPlayer player, SimukraftWorldData worldData) {
+        if (worldData.isFirstWorldModeSelectionCompleted() || !player.hasPermissions(2)) {
+            return;
+        }
+
+        NetworkManager.sendToPlayer(new com.xiaoliang.simukraft.network.OpenFirstWorldModeSelectionPacket(), player);
     }
 
     private static void grantFirstDreamAdvancement(ServerPlayer player) {
@@ -158,6 +176,7 @@ public class PlayerEvents {
 
         AdvancementProgress progress = player.getAdvancements().getOrStartProgress(advancement);
         if (progress.isDone()) {
+            markFirstDreamPlayed(player);
             return;
         }
 
@@ -166,5 +185,18 @@ public class PlayerEvents {
             return;
         }
 
+        markFirstDreamPlayed(player);
+    }
+
+    private static boolean hasPlayedFirstDream(ServerPlayer player) {
+        return player.getPersistentData()
+                .getCompound(Player.PERSISTED_NBT_TAG)
+                .getBoolean(FIRST_DREAM_PLAYED_TAG);
+    }
+
+    private static void markFirstDreamPlayed(ServerPlayer player) {
+        CompoundTag persistedData = player.getPersistentData().getCompound(Player.PERSISTED_NBT_TAG);
+        persistedData.putBoolean(FIRST_DREAM_PLAYED_TAG, true);
+        player.getPersistentData().put(Player.PERSISTED_NBT_TAG, persistedData);
     }
 }

@@ -385,11 +385,6 @@ public class ServerConfigScreen extends Screen {
         addSectionLabel(centerX, y, Component.translatable("gui.server_config.section.mode_config").getString());
         y += 22;
 
-        addBooleanConfig(centerX, y, Component.translatable("gui.server_config.enable_expert_mode").getString(), "enableExpertMode",
-                Component.translatable("gui.server_config.enable_expert_mode.tooltip").getString(),
-                ServerConfig.ENABLE_EXPERT_MODE.get());
-        y += 28;
-
         addBooleanConfig(centerX, y, Component.translatable("gui.server_config.enable_category_matching").getString(), "enableMaterialCategoryMatching",
                 Component.translatable("gui.server_config.enable_category_matching.tooltip").getString(),
                 ServerConfig.ENABLE_MATERIAL_CATEGORY_MATCHING.get());

@@ -13,9 +13,19 @@ import java.util.UUID;
 public class SimukraftWorldData extends SavedData {
     private static final String DATA_NAME = "simukraft_world_data";
     private int currentDay = 1; // 从第1天开始
+    private boolean firstWorldModeSelectionCompleted = false;
 
     public int getCurrentDay() {
         return currentDay;
+    }
+
+    public boolean isFirstWorldModeSelectionCompleted() {
+        return firstWorldModeSelectionCompleted;
+    }
+
+    public void setFirstWorldModeSelectionCompleted(boolean completed) {
+        this.firstWorldModeSelectionCompleted = completed;
+        setDirty();
     }
 
     public void incrementDay(ServerLevel level) {
@@ -83,12 +93,14 @@ public class SimukraftWorldData extends SavedData {
     @Override
     public CompoundTag save(@Nonnull CompoundTag tag) {
         tag.putInt("currentDay", currentDay);
+        tag.putBoolean("firstWorldModeSelectionCompleted", firstWorldModeSelectionCompleted);
         return tag;
     }
 
     public static SimukraftWorldData load(CompoundTag tag) {
         SimukraftWorldData data = new SimukraftWorldData();
         data.currentDay = tag.getInt("currentDay");
+        data.firstWorldModeSelectionCompleted = tag.getBoolean("firstWorldModeSelectionCompleted");
         return data;
     }
 

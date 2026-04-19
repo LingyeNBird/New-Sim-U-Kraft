@@ -246,4 +246,63 @@ public class BuilderDailyWorkHandler {
         if (server == null || npcUuid == null) return;
         ConstructionTaskData.removeTask(server, npcUuid);
     }
+
+    public static void autoDismissCompletedBuilder(ServerLevel level, CustomEntity npc, BlockPos buildBoxPos) {
+        if (level == null || npc == null) {
+            return;
+        }
+
+        MinecraftServer server = level.getServer();
+        var employmentService = com.xiaoliang.simukraft.employment.service.EmploymentServices.get(server);
+        var releaseResult = employmentService.fireByNpc(
+                new com.xiaoliang.simukraft.employment.service.EmploymentCommands.FireByNpcCommand(npc.getUUID())
+        );
+
+        BlockPos syncPos = buildBoxPos;
+        if (releaseResult.success() && releaseResult.assignment() != null) {
+            syncPos = releaseResult.assignment().workplacePos();
+            cleanupBuilderLegacyHireData(server, npc.getUUID(), syncPos);
+            server.getPlayerList().getPlayers().forEach(player ->
+                    com.xiaoliang.simukraft.network.NetworkManager.sendToPlayer(
+                            new com.xiaoliang.simukraft.network.EmploymentStateChangedPacket(releaseResult.assignment()),
+                            player
+                    )
+            );
+        } else {
+            cleanupBuilderLegacyHireData(server, npc.getUUID(), buildBoxPos);
+        }
+
+        // 别jb乱弄这块，建筑师完工后的解雇必须同时清理雇佣记录和客户端同步，否则第二天会复活成建筑师。
+        npc.resetToIdle();
+        BlockPos finalSyncPos = syncPos != null ? syncPos : npc.blockPosition();
+        String npcName = npc.getFullName();
+        server.getPlayerList().getPlayers().forEach(player ->
+                com.xiaoliang.simukraft.network.NetworkManager.sendToPlayer(
+                        new com.xiaoliang.simukraft.network.NPCWorkStatusPacket(
+                                npc.getUUID(),
+                                WorkStatus.IDLE,
+                                finalSyncPos,
+                                npcName,
+                                "unemployed"
+                        ),
+                        player
+                )
+        );
+
+        Simukraft.LOGGER.info("[BuilderDailyWorkHandler] 建筑师 {} 已在完工后自动解雇", npcName);
+    }
+
+    private static void cleanupBuilderLegacyHireData(MinecraftServer server, UUID npcUuid, BlockPos buildBoxPos) {
+        if (server == null || npcUuid == null) {
+            return;
+        }
+
+        Map<BlockPos, UUID> hiredBuilders = BuildBoxHiredData.loadHiredBuilders(server);
+        boolean buildersChanged = hiredBuilders.entrySet().removeIf(entry ->
+                npcUuid.equals(entry.getValue()) || (buildBoxPos != null && buildBoxPos.equals(entry.getKey()))
+        );
+        if (buildersChanged) {
+            BuildBoxHiredData.saveHiredBuilders(server, hiredBuilders);
+        }
+    }
 }

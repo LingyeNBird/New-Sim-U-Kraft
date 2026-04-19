@@ -9,6 +9,7 @@ import com.xiaoliang.simukraft.employment.domain.WorkBlockType;
 import com.xiaoliang.simukraft.employment.service.LegacyJobTypeMapper;
 import com.xiaoliang.simukraft.entity.CustomEntity;
 import com.xiaoliang.simukraft.utils.FileUtils;
+import com.xiaoliang.simukraft.utils.NPCTaskScheduler;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.storage.LevelResource;
@@ -459,11 +460,9 @@ public class CommercialHiredData {
     }
 
     public static CustomEntity findNPCByUuid(MinecraftServer server, UUID uuid) {
-        for (var level : server.getAllLevels()) {
-            for (var entity : level.getAllEntities()) {
-                if (entity instanceof CustomEntity && entity.getUUID().equals(uuid)) {
-                    return (CustomEntity) entity;
-                }
+        for (CustomEntity npc : NPCTaskScheduler.getAllNPCs(server)) {
+            if (uuid.equals(npc.getUUID())) {
+                return npc;
             }
         }
         return null;

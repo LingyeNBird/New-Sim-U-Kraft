@@ -1332,22 +1332,29 @@ public class CustomEntity extends Animal {
 
     public void completeConstruction() {
         if (constructionTask != null) {
-            // 在清除任务前获取建筑名称
-            String buildingName = constructionTask.getBuildingName();
+            com.xiaoliang.simukraft.building.ConstructionTask completedTask = constructionTask;
+            String buildingName = completedTask.getBuildingName();
+            BlockPos buildBoxPos = completedTask.getBuildBoxPos();
 
-            constructionTask.markCompleted();
+            completedTask.markCompleted();
+
+            if (this.level() instanceof ServerLevel serverLevel) {
+                // 别jb乱弄这块，住宅控制盒必须在整栋建筑完工后统一激活，否则会提前入住。
+                for (BlockPos controlBoxPos : completedTask.getControlBoxPositions()) {
+                    com.xiaoliang.simukraft.block.ResidentialControlBoxBlock.activatePendingResidence(serverLevel, controlBoxPos);
+                }
+            }
+
             setConstructionTask(null);
-            // 建造完成后保留雇佣关系，但切换到待命状态，让建筑师可自由活动。
-            enterBuilderStandbyMode();
-            Simukraft.LOGGER.info("[CustomEntity] NPC {} construction complete, entering standby while keeping hire status", this.getFullName());
 
             // 添加建筑完成提示
             com.xiaoliang.simukraft.utils.ConstructionCompletionNotifier.notifyConstructionCompletion(this, buildingName);
 
-            // 移除持久化存储中的建造任务
             if (this.level() instanceof ServerLevel serverLevel) {
-                com.xiaoliang.simukraft.utils.BuilderDailyWorkHandler.removeConstructionTask(
-                    serverLevel.getServer(), this.getUUID()
+                com.xiaoliang.simukraft.utils.BuilderDailyWorkHandler.autoDismissCompletedBuilder(
+                        serverLevel,
+                        this,
+                        buildBoxPos
                 );
             }
         }

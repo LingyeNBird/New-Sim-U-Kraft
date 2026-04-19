@@ -21,6 +21,8 @@ import net.minecraftforge.registries.ForgeRegistries;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.io.BufferedReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -29,6 +31,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 工业工作处理器
@@ -42,6 +45,7 @@ public class IndustrialWorkHandler {
     private static final Map<BlockPos, Long> lastWorkTick = new HashMap<>();
     // 存储每个工业建筑当天是否已经在工作结束时间处理过
     private static final Map<BlockPos, Long> processedEndOfDay = new HashMap<>();
+    private static final Map<Path, String> BUILDING_FILE_NAME_CACHE = new ConcurrentHashMap<>();
     private static boolean dataInitialized = false;
 
     // 性能优化：添加tick冷却，避免每tick都检查
@@ -56,6 +60,7 @@ public class IndustrialWorkHandler {
         dataInitialized = false;
         lastWorkTick.clear();
         processedEndOfDay.clear();
+        BUILDING_FILE_NAME_CACHE.clear();
 
         // 初始化工业建筑配置管理器
         IndustrialBuildingManager.init(server);
@@ -420,6 +425,24 @@ public class IndustrialWorkHandler {
     }
 
     /**
+     * NPC起床后回到工业工作方块时，恢复当天的工业工作现场状态。
+     */
+    public static void restoreNpcAfterRest(CustomEntity npc, ServerLevel level, BlockPos farmPos, String buildingFileName) {
+        if (npc == null || level == null || farmPos == null || buildingFileName == null) {
+            return;
+        }
+
+        IndustrialBuildingConfig config = IndustrialBuildingManager.getConfig(buildingFileName);
+        if (config == null) {
+            return;
+        }
+
+        String selectedRecipeId = ControlBoxDataManager.getSelectedRecipe(level.getServer(), farmPos);
+        setHeldItemFromConfig(npc, config, selectedRecipeId);
+        spawnEntitiesIfNeeded(level, farmPos, config);
+    }
+
+    /**
      * 设置手持物品（公共方法，供外部调用）
      * @param selectedRecipeId 当前选择的配方ID
      */
@@ -510,18 +533,35 @@ public class IndustrialWorkHandler {
             String fileName = pos.getX() + "_" + pos.getY() + "_" + pos.getZ() + ".sk";
             Path skFile = industrialDir.resolve(fileName);
 
-            if (Files.exists(skFile)) {
-                java.util.List<String> lines = Files.readAllLines(skFile, java.nio.charset.Charset.forName("UTF-8"));
-                for (String line : lines) {
-                    line = line.trim();
-                    if (line.startsWith("building_file_name:")) {
-                        return FileUtils.normalizeBuildingFileName(line.substring(19).trim());
-                    }
-                }
+            String cached = BUILDING_FILE_NAME_CACHE.get(skFile);
+            if (cached != null) {
+                return cached.isEmpty() ? null : cached;
             }
+
+            String buildingFileName = readBuildingFileName(skFile);
+            BUILDING_FILE_NAME_CACHE.put(skFile, buildingFileName == null ? "" : buildingFileName);
+            return buildingFileName;
         } catch (Exception e) {
             LOGGER.error(Component.translatable("message.industrial_work_handler.error.read_building_name_failed", e.getMessage()).getString());
         }
+        return null;
+    }
+
+    private static String readBuildingFileName(Path skFile) throws java.io.IOException {
+        if (!Files.exists(skFile)) {
+            return null;
+        }
+
+        try (BufferedReader reader = Files.newBufferedReader(skFile, StandardCharsets.UTF_8)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.startsWith("building_file_name:")) {
+                    return FileUtils.normalizeBuildingFileName(trimmed.substring(19).trim());
+                }
+            }
+        }
+
         return null;
     }
 

@@ -504,6 +504,7 @@ public class NPCRestHandler {
             npcSubStates.put(npcUuid, WorkSubState.WORKING);
             // 恢复isWorking为true，让NPC可以正常工作
             npc.setWorking(true);
+            restoreJobSpecificWorkState(npc, npcUuid, previousJob, level);
         } else {
             npc.setWorkSubState(WorkSubState.NONE);
             npcSubStates.put(npcUuid, WorkSubState.NONE);
@@ -551,6 +552,45 @@ public class NPCRestHandler {
         npcPathfindingStatus.remove(npcUuid);
 
         LOGGER.info("[NPCRestHandler] NPC {} 休息状态数据已完全清理，标签将恢复正常显示", npc.getFullName());
+    }
+
+    private static void restoreJobSpecificWorkState(CustomEntity npc, UUID npcUuid, String previousJob, ServerLevel level) {
+        if (npc == null || previousJob == null || previousJob.isBlank() || level == null || level.getServer() == null) {
+            return;
+        }
+
+        BlockPos workPos = getWorkplacePosition(npc, level.getServer(), previousJob);
+        if (workPos == null) {
+            return;
+        }
+
+        if ("builder".equals(previousJob)) {
+            // 建筑师使用单独的任务恢复逻辑，这里不重复处理。
+            return;
+        }
+
+        if ("farmer".equals(previousJob)) {
+            FarmerDailyWorkHandler.restoreFarmerWorkState(npc, workPos, level);
+            return;
+        }
+
+        if (com.xiaoliang.simukraft.building.CommercialBuildingManager.isCommercialJobType(previousJob)) {
+            String buildingFileName = CommercialWorkHandler.getBuildingFileName(level, workPos);
+            if (buildingFileName != null) {
+                CommercialWorkHandler.restoreNpcAfterRest(npc, level, workPos, buildingFileName);
+            }
+            return;
+        }
+
+        String industrialBuildingFileName = IndustrialWorkHandler.getBuildingFileName(level, workPos);
+        if (industrialBuildingFileName != null) {
+            IndustrialWorkHandler.restoreNpcAfterRest(npc, level, workPos, industrialBuildingFileName);
+            return;
+        }
+
+        if ("warehouse_manager".equals(previousJob)) {
+            npc.setWorking(true);
+        }
     }
 
     /**
@@ -789,16 +829,7 @@ public class NPCRestHandler {
      */
     public static void updateRestStatus(ServerLevel level) {
         if (level == null) return;
-
-        // 获取服务器中的所有CustomEntity
-        List<CustomEntity> allNPCs = new ArrayList<>();
-        level.getAllEntities().forEach(entity -> {
-            if (entity instanceof CustomEntity npc) {
-                allNPCs.add(npc);
-            }
-        });
-
-        updateRestStatusInternal(level, allNPCs);
+        updateRestStatusInternal(level, NPCTaskScheduler.getNPCsInLevel(level));
     }
 
     /**

@@ -2,25 +2,37 @@
   "voice.male_hello": {
     "subtitle": "simukraft.subtitle.male_hello",
     "sounds": [
-      "minecraft:entity.villager.ambient"
+      {
+        "name": "minecraft:entity.villager.ambient",
+        "type": "event"
+      }
     ]
   },
   "voice.female_hello": {
     "subtitle": "simukraft.subtitle.female_hello",
     "sounds": [
-      "minecraft:entity.villager.ambient"
+      {
+        "name": "minecraft:entity.villager.ambient",
+        "type": "event"
+      }
     ]
   },
   "voice.male_hurt": {
     "subtitle": "simukraft.subtitle.male_hurt",
     "sounds": [
-      "minecraft:entity.villager.hurt"
+      {
+        "name": "minecraft:entity.villager.hurt",
+        "type": "event"
+      }
     ]
   },
   "voice.female_hurt": {
     "subtitle": "simukraft.subtitle.female_hurt",
     "sounds": [
-      "minecraft:entity.villager.hurt"
+      {
+        "name": "minecraft:entity.villager.hurt",
+        "type": "event"
+      }
     ]
   },
   "block.build_box.place": {

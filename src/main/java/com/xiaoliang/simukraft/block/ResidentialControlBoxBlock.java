@@ -1,6 +1,7 @@
 package com.xiaoliang.simukraft.block;
 
 import com.xiaoliang.simukraft.building.ControlBoxDataManager;
+import com.xiaoliang.simukraft.building.ConstructionBoxMapping;
 import com.xiaoliang.simukraft.utils.ClientRuntimeBridge;
 import com.xiaoliang.simukraft.utils.ResidentManager;
 import net.minecraft.core.BlockPos;
@@ -49,30 +50,53 @@ public class ResidentialControlBoxBlock extends Block {
         if (!level.isClientSide && !oldState.is(Objects.requireNonNull(state.getBlock()))) {
             MinecraftServer server = level.getServer();
             if (server != null) {
-                // 修复：传入level参数以支持持久化存储
-                // 从ConstructionBoxMapping获取建筑名称和城市ID
-                com.xiaoliang.simukraft.world.ConstructionBoxData.BoxInfo boxInfo = 
-                    com.xiaoliang.simukraft.building.ConstructionBoxMapping.getBoxInfo(level, pos);
-                String buildingFileName = boxInfo != null ? boxInfo.buildingFileName : "unknown";
-                java.util.UUID cityId = boxInfo != null ? boxInfo.cityId : null;
-
-                // 使用ControlBoxDataManager写入数据（使用英文文件名以便读取租金）
-                ControlBoxDataManager.writeResidentialControlBox(server, pos, buildingFileName, null, cityId);
-
-                // 尝试为同城市的NPC分配住宅（优先分配给npcid小的）
-                if (cityId != null) {
-                    boolean assigned = ResidentManager.assignResidenceToCityNPCs(server, pos, cityId);
-                    if (!assigned) {
-                        LOGGER.info("[ResidentialControlBoxBlock] 住宅 {} 暂时空置，等待新NPC生成", pos);
-                    }
-                } else {
-                    LOGGER.warn("[ResidentialControlBoxBlock] 警告：控制盒没有城市ID，无法分配住宅");
+                com.xiaoliang.simukraft.world.ConstructionBoxData.BoxInfo boxInfo =
+                        ConstructionBoxMapping.getBoxInfo(level, pos);
+                if (boxInfo != null) {
+                    // 建筑施工中先放下控制盒时不立即开放入住，等待整栋建筑完工后统一激活。
+                    LOGGER.info("[ResidentialControlBoxBlock] 住宅 {} 已放置，等待建筑完工后再开放入住", pos);
+                    return;
                 }
 
-                // 修复：传入level参数以支持持久化存储
-                // 移除已处理的控制盒
-                com.xiaoliang.simukraft.building.ConstructionBoxMapping.removePendingBox(level, pos);
+                initializeResidence(server, pos, "unknown", null);
             }
+        }
+    }
+
+    public static void activatePendingResidence(Level level, BlockPos pos) {
+        if (level.isClientSide) {
+            return;
+        }
+
+        MinecraftServer server = level.getServer();
+        if (server == null) {
+            return;
+        }
+
+        com.xiaoliang.simukraft.world.ConstructionBoxData.BoxInfo boxInfo = ConstructionBoxMapping.getBoxInfo(level, pos);
+        if (boxInfo == null) {
+            return;
+        }
+
+        BlockState state = level.getBlockState(pos);
+        if (!(state.getBlock() instanceof ResidentialControlBoxBlock)) {
+            return;
+        }
+
+        initializeResidence(server, pos, boxInfo.buildingFileName, boxInfo.cityId);
+        ConstructionBoxMapping.removePendingBox(level, pos);
+    }
+
+    private static void initializeResidence(MinecraftServer server, BlockPos pos, String buildingFileName, java.util.UUID cityId) {
+        ControlBoxDataManager.writeResidentialControlBox(server, pos, buildingFileName, null, cityId);
+
+        if (cityId != null) {
+            boolean assigned = ResidentManager.assignResidenceToCityNPCs(server, pos, cityId);
+            if (!assigned) {
+                LOGGER.info("[ResidentialControlBoxBlock] 住宅 {} 暂时空置，等待新NPC生成", pos);
+            }
+        } else {
+            LOGGER.warn("[ResidentialControlBoxBlock] 警告：控制盒没有城市ID，无法分配住宅");
         }
     }
 

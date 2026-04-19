@@ -19,6 +19,8 @@ import net.minecraftforge.registries.ForgeRegistries;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.io.BufferedReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -26,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 商业建筑工作处理器
@@ -43,6 +46,7 @@ public class CommercialWorkHandler {
     private static final Map<BlockPos, Long> lastShiftEndDay = new HashMap<>();
     // 记录当天是否已满足开售原料前置条件
     private static final Map<BlockPos, Long> preparedMaterialsDay = new HashMap<>();
+    private static final Map<Path, String> BUILDING_FILE_NAME_CACHE = new ConcurrentHashMap<>();
     private static boolean dataInitialized = false;
 
     // 性能优化：添加tick冷却，避免每tick都检查
@@ -65,6 +69,7 @@ public class CommercialWorkHandler {
         lastShiftStartDay.clear();
         lastShiftEndDay.clear();
         preparedMaterialsDay.clear();
+        BUILDING_FILE_NAME_CACHE.clear();
 
         // 初始化商业建筑配置管理器
         CommercialBuildingManager.init(server);
@@ -444,23 +449,7 @@ public class CommercialWorkHandler {
         }
         npc.setWorking(true);
         moveNpcToWorkplace(npc, buildingPos);
-
-        if (config.hasMaterialRequirements()) {
-            // 检查箱子中是否有足够的原料
-            boolean hasMaterials = hasMaterialsInNearbyContainers(buildingPos, level, config);
-            if (hasMaterials) {
-                preparedMaterialsDay.put(buildingPos, dayIndex);
-                LOGGER.info("[商业建筑] {} 开工检查通过，箱子中有原料，今日可以开售", config.getBuildingName());
-            } else {
-                preparedMaterialsDay.remove(buildingPos);
-                // 只有在调试模式下记录失败日志，避免刷屏
-                if (com.xiaoliang.simukraft.config.ServerConfig.isDebugLogEnabled()) {
-                    LOGGER.info("[商业建筑] {} 开工检查失败，箱子中没有原料，今日不允许开售", config.getBuildingName());
-                }
-            }
-        } else {
-            preparedMaterialsDay.put(buildingPos, dayIndex);
-        }
+        prepareMaterialsForToday(buildingPos, level, config, dayIndex);
     }
 
     private static void handleShiftEnd(CustomEntity npc, BlockPos buildingPos, ServerLevel level,
@@ -505,6 +494,29 @@ public class CommercialWorkHandler {
             return timeOfDay >= startTick && timeOfDay < endTick;
         }
         return timeOfDay >= startTick || timeOfDay < endTick;
+    }
+
+    private static void prepareMaterialsForToday(BlockPos buildingPos, ServerLevel level,
+                                                 CommercialBuildingConfig config, long dayIndex) {
+        if (buildingPos == null || level == null || config == null) {
+            return;
+        }
+
+        if (config.hasMaterialRequirements()) {
+            boolean hasMaterials = hasMaterialsInNearbyContainers(buildingPos, level, config);
+            if (hasMaterials) {
+                preparedMaterialsDay.put(buildingPos, dayIndex);
+                LOGGER.info("[商业建筑] {} 开工检查通过，箱子中有原料，今日可以开售", config.getBuildingName());
+            } else {
+                preparedMaterialsDay.remove(buildingPos);
+                if (com.xiaoliang.simukraft.config.ServerConfig.isDebugLogEnabled()) {
+                    LOGGER.info("[商业建筑] {} 开工检查失败，箱子中没有原料，今日不允许开售", config.getBuildingName());
+                }
+            }
+            return;
+        }
+
+        preparedMaterialsDay.put(buildingPos, dayIndex);
     }
 
     private static void moveNpcToWorkplace(CustomEntity npc, BlockPos workPos) {
@@ -856,17 +868,34 @@ public class CommercialWorkHandler {
             String fileName = pos.getX() + "_" + pos.getY() + "_" + pos.getZ() + ".sk";
             Path skFile = commercialDir.resolve(fileName);
 
-            if (Files.exists(skFile)) {
-                java.util.List<String> lines = Files.readAllLines(skFile, java.nio.charset.Charset.forName("UTF-8"));
-                for (String line : lines) {
-                    line = line.trim();
-                    if (line.startsWith("building_file_name:")) {
-                        return line.substring(19).trim();
-                    }
-                }
+            String cached = BUILDING_FILE_NAME_CACHE.get(skFile);
+            if (cached != null) {
+                return cached.isEmpty() ? null : cached;
             }
+
+            String buildingFileName = readBuildingFileName(skFile);
+            BUILDING_FILE_NAME_CACHE.put(skFile, buildingFileName == null ? "" : buildingFileName);
+            return buildingFileName;
         } catch (Exception e) {
         }
+        return null;
+    }
+
+    private static String readBuildingFileName(Path skFile) throws java.io.IOException {
+        if (!Files.exists(skFile)) {
+            return null;
+        }
+
+        try (BufferedReader reader = Files.newBufferedReader(skFile, StandardCharsets.UTF_8)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.startsWith("building_file_name:")) {
+                    return trimmed.substring(19).trim();
+                }
+            }
+        }
+
         return null;
     }
 
@@ -945,6 +974,28 @@ public class CommercialWorkHandler {
 
         // 设置手持物品
         setHeldItemFromConfig(npc, config);
+    }
+
+    /**
+     * NPC起床后回到商业工作方块时，补跑当天的开工初始化。
+     */
+    public static void restoreNpcAfterRest(CustomEntity npc, ServerLevel level, BlockPos pos, String buildingFileName) {
+        if (npc == null || level == null || pos == null || buildingFileName == null) {
+            return;
+        }
+
+        CommercialBuildingConfig config = CommercialBuildingManager.getConfig(buildingFileName);
+        if (config == null) {
+            return;
+        }
+
+        initializeStock(pos, level, config);
+        setHeldItemFromConfig(npc, config);
+
+        long dayIndex = level.getDayTime() / 24000L;
+        lastShiftStartDay.put(pos, dayIndex);
+        lastShiftEndDay.remove(pos);
+        prepareMaterialsForToday(pos, level, config, dayIndex);
     }
 
     /**

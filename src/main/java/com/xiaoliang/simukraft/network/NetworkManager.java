@@ -774,6 +774,18 @@ public class NetworkManager {
                 FeedNPCPacket::encode,
                 FeedNPCPacket::decode,
                 FeedNPCPacket::handle);
+
+        INSTANCE.registerMessage(id++,
+                OpenFirstWorldModeSelectionPacket.class,
+                OpenFirstWorldModeSelectionPacket::encode,
+                OpenFirstWorldModeSelectionPacket::decode,
+                OpenFirstWorldModeSelectionPacket::handle);
+
+        INSTANCE.registerMessage(id++,
+                SubmitFirstWorldModeSelectionPacket.class,
+                SubmitFirstWorldModeSelectionPacket::encode,
+                SubmitFirstWorldModeSelectionPacket::decode,
+                SubmitFirstWorldModeSelectionPacket::handle);
     }
 
     public static void sendToPlayer(SyncDayPacket packet, ServerPlayer player) {

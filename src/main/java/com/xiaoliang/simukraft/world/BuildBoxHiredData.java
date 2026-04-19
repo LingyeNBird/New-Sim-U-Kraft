@@ -4,6 +4,7 @@ import com.xiaoliang.simukraft.employment.bridge.EmploymentLegacyBridge;
 import com.xiaoliang.simukraft.employment.domain.JobType;
 import com.xiaoliang.simukraft.employment.domain.WorkBlockType;
 import com.xiaoliang.simukraft.entity.CustomEntity;
+import com.xiaoliang.simukraft.utils.NPCTaskScheduler;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 
@@ -57,11 +58,9 @@ public class BuildBoxHiredData {
         if (server == null || uuid == null) {
             return null;
         }
-        for (var level : server.getAllLevels()) {
-            for (var entity : level.getAllEntities()) {
-                if (entity instanceof CustomEntity npc && entity.getUUID().equals(uuid)) {
-                    return npc;
-                }
+        for (CustomEntity npc : NPCTaskScheduler.getAllNPCs(server)) {
+            if (uuid.equals(npc.getUUID())) {
+                return npc;
             }
         }
         return null;

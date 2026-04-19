@@ -69,6 +69,10 @@ public class ConstructionTask {
     private boolean isCompleted = false;
     @Nonnull
     private final List<BlockInfo> blocksToPlace;
+    @Nonnull
+    private final Map<BlockPos, Integer> blockIndexLookup;
+    @Nonnull
+    private final List<BlockPos> controlBoxPositions;
     @Nullable
     private ChunkPos loadedChunkPos = null;
     // 修复：添加建筑盒周围区块的强制加载，确保箱子能被找到
@@ -88,6 +92,8 @@ public class ConstructionTask {
         this.displayName = Objects.requireNonNull(displayName);
         this.cost = cost;
         this.blocksToPlace = Objects.requireNonNull(loadAndParseBlocks());
+        this.blockIndexLookup = buildBlockIndexLookup(this.blocksToPlace);
+        this.controlBoxPositions = collectControlBoxPositions(this.blocksToPlace);
 
         // 加载建筑所在区块以及建筑盒周围区块（确保箱子能被找到）
         if (builder.level() instanceof ServerLevel serverLevel) {
@@ -139,6 +145,8 @@ public class ConstructionTask {
         this.displayName = Objects.requireNonNull(displayName);
         this.cost = cost;
         this.blocksToPlace = Objects.requireNonNull(loadAndParseBlocks());
+        this.blockIndexLookup = buildBlockIndexLookup(this.blocksToPlace);
+        this.controlBoxPositions = collectControlBoxPositions(this.blocksToPlace);
 
         // 加载建筑所在区块以及建筑盒周围区块
         if (level != null) {
@@ -194,7 +202,7 @@ public class ConstructionTask {
             blocks.add(new BlockInfo(finalPos, rotatedState));
         }
 
-        // 按层排序，每层优先级：完整方块 > 不完整方块 > 需要支撑的方块 > 重力方块
+        // 按层排序，每层优先级：普通方块 > 需要支撑/重力方块 > 液体相关方块
         blocks.sort(new LayeredBlockComparator());
 
         Simukraft.LOGGER.info("[ConstructionTask] 方块已按层排序，共 " + blocks.size() + " 个方块");
@@ -204,7 +212,7 @@ public class ConstructionTask {
 
     /**
      * 层建造比较器
-     * 按Y坐标分层，每层内按优先级排序：完整方块 > 不完整方块 > 需要支撑的方块 > 重力方块
+     * 按Y坐标分层，每层内按优先级排序：完整方块 > 不完整方块 > 需要支撑的方块 > 重力方块 > 液体相关方块
      */
     private static class LayeredBlockComparator implements Comparator<BlockInfo> {
         @Override
@@ -227,9 +235,14 @@ public class ConstructionTask {
          * 1 = 不完整方块（台阶、楼梯等）
          * 2 = 需要支撑的方块（门、活板门、按钮、拉杆、火把、灯笼等）
          * 3 = 重力方块（沙子、沙砾等，最后建造）
+         * 4 = 液体相关方块（统一最后放置，避免流体更新影响前序建造）
          */
         private int getBlockPriority(BlockState state) {
             Block block = state.getBlock();
+
+            if (!state.getFluidState().isEmpty()) {
+                return 4;
+            }
 
             // 重力方块优先级最低（最后建造）
             if (block instanceof FallingBlock) {
@@ -729,13 +742,37 @@ public class ConstructionTask {
      * 在blocksToPlace列表中查找指定位置和状态的方块索引
      */
     private int findBlockIndex(BlockPos pos, BlockState state) {
-        for (int i = 0; i < blocksToPlace.size(); i++) {
-            BlockInfo info = blocksToPlace.get(i);
-            if (info.pos().equals(pos) && info.state().getBlock() == state.getBlock()) {
-                return i;
+        Integer index = blockIndexLookup.get(pos);
+        if (index == null) {
+            return -1;
+        }
+        BlockInfo info = blocksToPlace.get(index);
+        return info.state().getBlock() == state.getBlock() ? index : -1;
+    }
+
+    @Nonnull
+    private static Map<BlockPos, Integer> buildBlockIndexLookup(@Nonnull List<BlockInfo> blocks) {
+        Map<BlockPos, Integer> indexLookup = new HashMap<>(Math.max(16, blocks.size()));
+        for (int i = 0; i < blocks.size(); i++) {
+            indexLookup.put(blocks.get(i).pos(), i);
+        }
+        return indexLookup;
+    }
+
+    @Nonnull
+    private static List<BlockPos> collectControlBoxPositions(@Nonnull List<BlockInfo> blocks) {
+        List<BlockPos> positions = new ArrayList<>();
+        for (BlockInfo info : blocks) {
+            if (isControlBoxBlock(info.state())) {
+                positions.add(info.pos());
             }
         }
-        return -1;
+        return List.copyOf(positions);
+    }
+
+    private static boolean isControlBoxBlock(@Nonnull BlockState state) {
+        var blockId = net.minecraftforge.registries.ForgeRegistries.BLOCKS.getKey(state.getBlock());
+        return blockId != null && blockId.getPath().contains("control_box");
     }
 
     public void markCompleted() {
@@ -924,6 +961,11 @@ public class ConstructionTask {
      */
     public int getTotalBlocks() {
         return blocksToPlace.size();
+    }
+
+    @Nonnull
+    public List<BlockPos> getControlBoxPositions() {
+        return controlBoxPositions;
     }
 
     /**

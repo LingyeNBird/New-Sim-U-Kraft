@@ -4,7 +4,9 @@ import com.xiaoliang.simukraft.Simukraft;
 import com.xiaoliang.simukraft.entity.CustomEntity;
 import com.xiaoliang.simukraft.init.ModBlocks;
 import com.xiaoliang.simukraft.utils.IndustrialWorkHandler;
+import com.xiaoliang.simukraft.utils.NPCTaskScheduler;
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -37,35 +39,35 @@ public class NPCTeleportEventHandler {
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
-        
-        // 遍历所有服务器世界
-        for (ServerLevel level : event.getServer().getAllLevels()) {
-            // 检查所有NPC的传送状态
-            for (var entity : level.getAllEntities()) {
-                if (entity instanceof CustomEntity npc) {
-                    String job = npc.getJob();
-                    // 处理工业建筑NPC
-                    if ("shepherd".equals(job) || "butcher".equals(job) || "worker".equals(job)) {
-                        handleIndustrialNPCTeleport(npc, level);
-                    }
-                    // 处理农民传送后的状态恢复
-                    else if ("farmer".equals(job)) {
-                        handleFarmerTeleport(npc, level);
-                    }
+
+        MinecraftServer server = event.getServer();
+        if (server == null) {
+            return;
+        }
+
+        // 复用NPC缓存，避免每tick遍历所有实体。
+        for (ServerLevel level : server.getAllLevels()) {
+            for (CustomEntity npc : NPCTaskScheduler.getNPCsInLevel(level)) {
+                String job = npc.getJob();
+                if ("shepherd".equals(job) || "butcher".equals(job) || "worker".equals(job)) {
+                    handleIndustrialNPCTeleport(npc, level);
+                } else if ("farmer".equals(job)) {
+                    handleFarmerTeleport(npc, level);
                 }
             }
         }
-        
-        // 清理过期的传送状态
-        npcTeleportStates.entrySet().removeIf(entry -> {
-            for (ServerLevel level : event.getServer().getAllLevels()) {
-                var entity = level.getEntity(entry.getKey());
-                if (entity instanceof CustomEntity npc) {
-                    return !entry.getValue().targetPos.equals(npc.blockPosition());
-                }
+
+        npcTeleportStates.entrySet().removeIf(entry -> isTeleportStateExpired(server, entry.getKey(), entry.getValue()));
+    }
+
+    private static boolean isTeleportStateExpired(MinecraftServer server, Integer npcId, TeleportState state) {
+        for (ServerLevel level : server.getAllLevels()) {
+            var entity = level.getEntity(npcId);
+            if (entity instanceof CustomEntity npc) {
+                return !state.targetPos.equals(npc.blockPosition());
             }
-            return true;
-        });
+        }
+        return true;
     }
     
     private static void handleIndustrialNPCTeleport(CustomEntity npc, ServerLevel level) {

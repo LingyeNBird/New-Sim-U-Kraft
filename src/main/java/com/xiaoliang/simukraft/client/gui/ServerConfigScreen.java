@@ -14,6 +14,7 @@ import com.lowdragmc.lowdraglib.gui.widget.ImageWidget;
 import com.lowdragmc.lowdraglib.gui.widget.TextFieldWidget;
 import com.lowdragmc.lowdraglib.gui.widget.WidgetGroup;
 import com.lowdragmc.lowdraglib.utils.Size;
+import com.mojang.blaze3d.platform.Window;
 import com.xiaoliang.simukraft.config.ServerConfig;
 import com.xiaoliang.simukraft.network.NetworkManager;
 import com.xiaoliang.simukraft.network.SyncConfigPacket;
@@ -105,28 +106,59 @@ public class ServerConfigScreen extends ModularUIGuiContainer {
 
     private static ModularUI createHolderAndUI() {
         // 在创建UI前设置3x缩放，确保LDLib使用正确的尺寸计算
-        FixedScaleHelper.applyFixedScale();
-
+        applyFixedScale();
+        
         ConfigUIHolder holder = new ConfigUIHolder();
         return holder.createModularUI();
     }
 
     @Override
     public void onClose() {
-        // 恢复原始缩放
-        FixedScaleHelper.restoreOriginalScale();
-
+        // 先恢复原始缩放
+        restoreOriginalScale();
+        
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft != null) {
             minecraft.setScreen(parent);
         }
     }
 
+    // 保存原始缩放值 - 使用静态变量确保在构造函数中可用
+    private static float originalScale = -1;
+
+    // 在渲染前设置3x缩放 - 静态方法供构造函数使用
+    private static void applyFixedScale() {
+        Minecraft mc = Minecraft.getInstance();
+        Window window = mc.getWindow();
+        
+        if (originalScale < 0) {
+            originalScale = mc.options.guiScale().get().floatValue();
+        }
+        
+        // 设置3x缩放
+        mc.options.guiScale().set(3);
+        window.setGuiScale(3.0);
+    }
+
+    // 恢复原始缩放
+    private void restoreOriginalScale() {
+        if (originalScale > 0) {
+            Minecraft mc = Minecraft.getInstance();
+            Window window = mc.getWindow();
+            
+            int scale = Math.round(originalScale);
+            mc.options.guiScale().set(scale);
+            window.setGuiScale(originalScale);
+            
+            originalScale = -1;
+        }
+    }
+
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
         // 应用固定缩放
-        FixedScaleHelper.applyFixedScale();
-
+        applyFixedScale();
+        
         // 调用父类渲染
         super.render(graphics, mouseX, mouseY, partialTicks);
     }

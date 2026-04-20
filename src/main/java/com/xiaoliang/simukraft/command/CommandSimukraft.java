@@ -5,6 +5,7 @@ import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.xiaoliang.simukraft.building.CommercialBuildingManager;
 import com.xiaoliang.simukraft.building.IndustrialBuildingManager;
 import com.xiaoliang.simukraft.entity.CustomEntity;
 import com.xiaoliang.simukraft.entity.FloatingBuildBoxEntity;
@@ -43,8 +44,22 @@ public class CommandSimukraft {
                         }
                         
                         try {
+                            // menglan: 清理并重新加载所有建筑相关缓存
+                            // 1. 清理建筑数据管理器缓存
+                            com.xiaoliang.simukraft.utils.BuildingDataManager.clearCache();
+
+                            // 2. 重新加载工业建筑配置
                             IndustrialBuildingManager.reload(server);
+
+                            // 3. 重新加载商业建筑配置
+                            CommercialBuildingManager.reload(server);
+
+                            // 4. 重新加载SK文件缓存
                             FileUtils.reloadSkFileCache(server);
+
+                            // 5. 预加载建筑数据到缓存
+                            com.xiaoliang.simukraft.utils.BuildingDataManager.reloadCache();
+
                             source.sendSuccess(() -> Component.literal("§aSimuKraft 配置文件已重新加载！"), true);
                             return 1;
                         } catch (Exception e) {

@@ -700,12 +700,6 @@
   "gui.server_config.button.edit_category_groups.tooltip": "§7配置普通模式下的材料通类匹配组\n§7格式：组名:item1,item2,item3",
   "gui.server_config.button.edit_expert_skip_list": "§e编辑专家模式跳过列表",
   "gui.server_config.button.edit_expert_skip_list.tooltip": "§7配置专家模式下不需要的材料",
-  "gui.first_world_mode.title": "首次进入世界",
-  "gui.first_world_mode.subtitle": "请选择这个世界使用的建造材料模式",
-  "gui.first_world_mode.normal": "普通模式",
-  "gui.first_world_mode.expert": "专家模式",
-  "gui.first_world_mode.normal.desc": "普通模式：使用基础材料和通类匹配组",
-  "gui.first_world_mode.expert.desc": "专家模式：建筑师需要所有材料，跳过列表除外",
 
   "gui.server_config.section.work_speed": "§b§n工作速度",
   "gui.server_config.section.item_handling": "§b§n物品处理",
@@ -719,9 +713,6 @@
   "gui.message.desc.reloaded": "§7服务器配置已重新加载",
   "gui.message.title.reset": "§c配置已重置",
   "gui.message.desc.reset": "§7配置已恢复为默认值",
-  "message.simukraft.first_world_mode.no_permission": "你没有权限设置这个世界的首次模式选择",
-  "message.simukraft.first_world_mode.selected_normal": "已将这个世界设置为普通模式",
-  "message.simukraft.first_world_mode.selected_expert": "已将这个世界设置为专家模式",
 
   "gui.building_material_buy.title": "购买建材",
   "gui.building_material_buy.purchase": "购买",

@@ -88,8 +88,6 @@ public class PlayerEvents {
                     
                     // 发送HUD数据同步包
                     NetworkManager.sendHUDDataToPlayer(currentDay, worldPopulation, cityName, cityFunds, cityPopulation, player);
-
-                    maybeOpenFirstWorldModeSelection(player, worldData);
                     
                     // 同步所有城市区块数据（供地图高亮显示）
                     NetworkManager.broadcastAllCityChunks(server);
@@ -157,14 +155,6 @@ public class PlayerEvents {
         SoundEvent sound = ModSoundEvents.FIRST_DREAM.get();
         player.playNotifySound(sound, SoundSource.MUSIC, 1.0F, 1.0F);
         PENDING_FIRST_DREAM.put(player.getUUID(), FIRST_DREAM_SOUND_DURATION_TICKS);
-    }
-
-    private static void maybeOpenFirstWorldModeSelection(ServerPlayer player, SimukraftWorldData worldData) {
-        if (worldData.isFirstWorldModeSelectionCompleted() || !player.hasPermissions(2)) {
-            return;
-        }
-
-        NetworkManager.sendToPlayer(new com.xiaoliang.simukraft.network.OpenFirstWorldModeSelectionPacket(), player);
     }
 
     private static void grantFirstDreamAdvancement(ServerPlayer player) {

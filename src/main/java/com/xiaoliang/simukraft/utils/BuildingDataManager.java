@@ -68,6 +68,11 @@ public class BuildingDataManager {
     private static String SIMUKRAFT_BUILDING_FOLDER;
     private static final String[] CATEGORIES = {"residential", "commercial", "industry", "other"};
 
+    // 建筑信息缓存 - menglan: 缓存建筑类别数据避免重复文件读取
+    private static final Map<String, List<BuildingInfo>> BUILDING_CATEGORY_CACHE = new HashMap<>();
+    private static final Map<String, BuildingInfo> BUILDING_FILE_CACHE = new HashMap<>();
+    private static volatile boolean cacheInitialized = false;
+
     private static Path resolveProjectRoot(Path workingDir) {
         Path current = workingDir.toAbsolutePath().normalize();
         while (current != null) {
@@ -118,162 +123,116 @@ public class BuildingDataManager {
     }
     
     public static List<BuildingInfo> getBuildingsByCategory(String category) {
+        // menglan: 检查缓存
+        if (cacheInitialized) {
+            List<BuildingInfo> cached = BUILDING_CATEGORY_CACHE.get(category);
+            if (cached != null) {
+                return new ArrayList<>(cached);
+            }
+        }
+
         List<BuildingInfo> buildings = new ArrayList<>();
-        
-        LOGGER.debug("[BuildingDataManager] ====== 开始加载建筑类别: {} ======", category);
-        
+
         try {
-            // 获取当前工作目录
             Path workingDir = Paths.get("").toAbsolutePath();
-            LOGGER.debug("[BuildingDataManager] 当前工作目录: {}", workingDir);
-            LOGGER.debug("[BuildingDataManager] 建筑文件夹名称: {}", SIMUKRAFT_BUILDING_FOLDER);
-            
-            // 确定项目根目录（如果当前在run目录，则返回上级）
             Path projectRoot = resolveProjectRoot(workingDir);
-            LOGGER.debug("[BuildingDataManager] 解析后的项目根目录: {}", projectRoot);
-            
-            // 首先尝试从simukraftbuilding文件夹加载（相对于工作目录）
             Path simukraftBuildingPath = workingDir.resolve(SIMUKRAFT_BUILDING_FOLDER).resolve(category);
-            LOGGER.debug("[BuildingDataManager] 尝试simukraftbuilding路径: {}", simukraftBuildingPath.toAbsolutePath());
-            
+
             Path targetPath = null;
-            
+
             if (Files.exists(simukraftBuildingPath) && Files.isDirectory(simukraftBuildingPath)) {
                 targetPath = simukraftBuildingPath;
-                LOGGER.info("[BuildingDataManager] 在simukraftbuilding文件夹中找到有效路径: {}", targetPath.toAbsolutePath());
             } else {
-                LOGGER.debug("[BuildingDataManager] simukraftbuilding路径不存在，尝试其他可能的源路径");
-                // 尝试多种可能的源路径
                 Path[] possiblePaths = {
-                    // 开发环境路径1：相对于项目根目录
                     projectRoot.resolve("src/main/resources").resolve(BUILDING_ROOT_PATH).resolve(category),
-                    // 开发环境路径2：相对于运行目录
                     workingDir.resolve("..").resolve("src").resolve("main").resolve("resources").resolve(BUILDING_ROOT_PATH).resolve(category),
-                    // 运行环境路径：构建后的资源目录
                     projectRoot.resolve("build/resources/main").resolve(BUILDING_ROOT_PATH).resolve(category),
-                    // 绝对路径：用户目录下的项目
                     Paths.get(System.getProperty("user.dir"), "src", "main", "resources", BUILDING_ROOT_PATH, category)
                 };
-                
-                // 遍历所有可能的路径，找到存在的第一个
+
                 for (Path path : possiblePaths) {
-                    LOGGER.debug("[BuildingDataManager] 检查路径: {}", path.toAbsolutePath());
                     if (Files.exists(path) && Files.isDirectory(path)) {
                         targetPath = path;
-                        LOGGER.info("[BuildingDataManager] 找到有效路径: {}", targetPath.toAbsolutePath());
                         break;
                     }
                 }
             }
-            
+
             if (targetPath != null) {
-                LOGGER.debug("[BuildingDataManager] 最终使用的路径: {}", targetPath.toAbsolutePath());
-                
-                // 检查目录是否存在
                 if (!Files.exists(targetPath)) {
-                    LOGGER.error("[BuildingDataManager] 错误: 目录不存在: {}", targetPath);
-                    // 尝试从类路径加载作为后备
-                    LOGGER.info("[BuildingDataManager] 尝试从类路径加载作为后备");
+                    LOGGER.warn("[BuildingDataManager] 目录不存在，尝试类路径: {}", targetPath);
                     List<BuildingInfo> fallbackBuildings = loadFromClasspathFallback(category);
-                    LOGGER.info("[BuildingDataManager] 从类路径后备加载到 {} 个建筑", fallbackBuildings.size());
-                    return fallbackBuildings;
-                }
-                
-                LOGGER.debug("[BuildingDataManager] 目录存在，列出所有文件...");
-                
-                // 先列出目录中的所有文件
-                Files.list(targetPath).forEach(file -> {
-                    LOGGER.debug("[BuildingDataManager] 目录中的文件: {}", file.getFileName());
-                });
-                
-                AtomicInteger parsedCount = new AtomicInteger(0);
-                AtomicInteger addedCount = new AtomicInteger(0);
-                
-                // 遍历目录中的所有.sk文件
-                LOGGER.debug("[BuildingDataManager] 开始遍历目录中的.sk文件...");
-                Files.walk(targetPath, 1) // 只遍历当前目录，不递归
-                    .filter(Files::isRegularFile)
-                    .filter(path -> path.toString().endsWith(".sk"))
-                    .forEach(skFilePath -> {
-                        parsedCount.incrementAndGet();
-                        try {
-                            LOGGER.debug("[BuildingDataManager] 处理.sk文件: {}", skFilePath.getFileName());
-                            BuildingInfo info = parseBuildingFile(skFilePath, category);
-                            if (info != null) {
-                                buildings.add(info);
-                                addedCount.incrementAndGet();
-                                LOGGER.debug("[BuildingDataManager] 成功加载建筑: {} (文件名: {})", info.getName(), info.getFileName());
-                            } else {
-                                LOGGER.error("[BuildingDataManager] 无法解析建筑文件: {}", skFilePath);
+                    buildings.addAll(fallbackBuildings);
+                } else {
+                    AtomicInteger parsedCount = new AtomicInteger(0);
+                    AtomicInteger addedCount = new AtomicInteger(0);
+
+                    Files.walk(targetPath, 1)
+                        .filter(Files::isRegularFile)
+                        .filter(path -> path.toString().endsWith(".sk"))
+                        .forEach(skFilePath -> {
+                            parsedCount.incrementAndGet();
+                            try {
+                                BuildingInfo info = parseBuildingFile(skFilePath, category);
+                                if (info != null) {
+                                    buildings.add(info);
+                                    addedCount.incrementAndGet();
+                                }
+                            } catch (Exception e) {
+                                LOGGER.error("[BuildingDataManager] 解析文件 {} 失败: {}", skFilePath, e.getMessage());
                             }
-                        } catch (Exception e) {
-                            LOGGER.error("[BuildingDataManager] 解析文件 {} 失败: {}", skFilePath, e.getMessage());
-                        }
-                    });
-                
-                LOGGER.info("[BuildingDataManager] .sk文件处理完成: 共处理 {} 个文件，成功添加 {} 个建筑", parsedCount.get(), addedCount.get());
+                        });
+
+                    LOGGER.info("[BuildingDataManager] 加载类别 {}: 处理 {} 个文件，成功 {} 个建筑", category, parsedCount.get(), addedCount.get());
+                }
             } else {
-                LOGGER.warn("[BuildingDataManager] 未找到任何有效的建筑源路径");
+                LOGGER.warn("[BuildingDataManager] 未找到类别 {} 的有效路径", category);
             }
-            
-            // 如果没有从文件系统加载到建筑信息，尝试从类路径加载
+
             if (buildings.isEmpty()) {
-                LOGGER.info("[BuildingDataManager] 从文件系统未加载到建筑信息，尝试从类路径加载作为后备");
                 List<BuildingInfo> classpathBuildings = loadFromClasspathFallback(category);
-                LOGGER.info("[BuildingDataManager] 从类路径加载到 {} 个建筑", classpathBuildings.size());
                 buildings.addAll(classpathBuildings);
             }
-            
-            LOGGER.debug("[BuildingDataManager] ====== 完成加载类别 {}，共加载 {} 个建筑 ======", category, buildings.size());
-                
+
         } catch (Exception e) {
-            LOGGER.error("[BuildingDataManager] 加载建筑类别 {} 时发生严重错误: {}", category, e.getMessage());
-            // 发生异常时，尝试从类路径加载
-            LOGGER.info("[BuildingDataManager] 发生异常，尝试从类路径加载作为后备");
+            LOGGER.error("[BuildingDataManager] 加载类别 {} 失败: {}", category, e.getMessage());
             List<BuildingInfo> fallbackBuildings = loadFromClasspathFallback(category);
-            LOGGER.info("[BuildingDataManager] 从类路径后备加载到 {} 个建筑", fallbackBuildings.size());
             buildings.addAll(fallbackBuildings);
         }
         
+        // menglan: 存入缓存
+        if (!buildings.isEmpty()) {
+            BUILDING_CATEGORY_CACHE.put(category, new ArrayList<>(buildings));
+            cacheInitialized = true;
+        }
+
         return buildings;
     }
-    
+
     private static BuildingInfo parseBuildingFile(Path skFilePath, String category) throws IOException {
-        LOGGER.debug("[BuildingDataManager] Parsing file: {}", skFilePath);
-        
         try {
             List<String> lines = Files.readAllLines(skFilePath, StandardCharsets.UTF_8);
             Map<String, String> data = new HashMap<>();
-            
-            LOGGER.debug("[BuildingDataManager] Reading {} lines from file", lines.size());
-            
-            for (int i = 0; i < lines.size(); i++) {
-                String line = lines.get(i).trim();
-                LOGGER.debug("[BuildingDataManager] Line {}: '{}'", (i+1), line);
-                
+
+            for (String line : lines) {
+                line = line.trim();
                 if (line.contains(":")) {
                     String[] parts = line.split(":", 2);
                     if (parts.length == 2) {
-                        String key = parts[0].trim();
-                        // 去除可能的BOM字符
-                        key = key.replace("\uFEFF", "").trim();
+                        String key = parts[0].trim().replace("\uFEFF", "").trim();
                         String value = parts[1].trim();
                         data.put(key, value);
-                        LOGGER.debug("[BuildingDataManager] Parsed key-value: {} = {}", key, value);
                     }
                 }
             }
-            
-            LOGGER.debug("[BuildingDataManager] Parsed data map: {}", data);
-            
+
             String name = data.getOrDefault("name", Component.translatable("building.unknown.name").getString());
             String size = data.getOrDefault("size", Component.translatable("building.unknown.size").getString());
             String amount = data.getOrDefault("amount", Component.translatable("building.unknown.price").getString());
             String author = data.getOrDefault("author", Component.translatable("building.unknown.author").getString());
             String description = data.getOrDefault("description", Component.translatable("building.unknown.description").getString());
             String jobType = data.getOrDefault("job_type", null);
-            
-            // 解析标签 - 支持逗号分隔的多个标签
+
             List<String> tags = new ArrayList<>();
             String tagsStr = data.get("tags");
             if (tagsStr != null && !tagsStr.isEmpty()) {
@@ -281,35 +240,21 @@ public class BuildingDataManager {
                     tags.add(tag.trim());
                 }
             }
-            
-            LOGGER.debug("[BuildingDataManager] Extracted values:");
-            LOGGER.debug("  name: {}", name);
-            LOGGER.debug("  size: {}", size);
-            LOGGER.debug("  amount: {}", amount);
-            LOGGER.debug("  author: {}", author);
-            LOGGER.debug("  description: {}", description);
-            LOGGER.debug("  job_type: {}", jobType);
-            LOGGER.debug("  tags: {}", tags);
-            
-            // 获取对应的litematic文件名
+
             String baseName = skFilePath.getFileName().toString().replace(".sk", "");
             String litematicFileName = baseName + ".litematic";
-            
-            BuildingInfo info = new BuildingInfo(name, size, amount, author, description, category, 
+
+            return new BuildingInfo(name, size, amount, author, description, category,
                                   skFilePath.getFileName().toString(), litematicFileName, jobType, tags);
-            
-            LOGGER.debug("[BuildingDataManager] Successfully created BuildingInfo: {}", info.getName());
-            return info;
-            
+
         } catch (Exception e) {
-            LOGGER.error("[BuildingDataManager] ERROR parsing file {}: {}", skFilePath, e.getMessage());
+            LOGGER.error("[BuildingDataManager] 解析文件 {} 失败: {}", skFilePath, e.getMessage());
             throw e;
         }
     }
-    
+
     private static List<BuildingInfo> loadFromClasspathFallback(String category) {
         List<BuildingInfo> buildings = new ArrayList<>();
-        LOGGER.debug("[BuildingDataManager] Using classpath fallback for category: {}", category);
         
         try {
             // 获取类路径中的资源列表
@@ -369,7 +314,6 @@ public class BuildingDataManager {
                         String key = parts[0].trim().replace("\uFEFF", "").trim();
                         String value = parts[1].trim();
                         data.put(key, value);
-                        LOGGER.debug("[BuildingDataManager] Parsed key-value: {} = {}", key, value);
                     }
                 }
             }
@@ -425,81 +369,88 @@ public class BuildingDataManager {
     }
     
     public static BuildingInfo getBuildingInfo(String category, String fileName) {
+        String cacheKey = category + "/" + fileName;
+        if (cacheInitialized) {
+            BuildingInfo cached = BUILDING_FILE_CACHE.get(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+        }
+
         List<BuildingInfo> buildings = getBuildingsByCategory(category);
         for (BuildingInfo building : buildings) {
             if (building.getFileName().equals(fileName)) {
+                BUILDING_FILE_CACHE.put(cacheKey, building);
                 return building;
             }
         }
         return null;
     }
+    
+    /**
+     * menglan: 清理建筑数据缓存
+     */
+    public static void clearCache() {
+        BUILDING_CATEGORY_CACHE.clear();
+        BUILDING_FILE_CACHE.clear();
+        cacheInitialized = false;
+        LOGGER.info("[BuildingDataManager] 建筑数据缓存已清理");
+    }
+    
+    /**
+     * menglan: 重新初始化缓存
+     */
+    public static void reloadCache() {
+        clearCache();
+        // 预加载所有类别的建筑数据到缓存
+        for (String category : CATEGORIES) {
+            getBuildingsByCategory(category);
+        }
+        LOGGER.info("[BuildingDataManager] 建筑数据缓存已重新加载");
+    }
 
     // 检查和复制建筑文件到simukraftbuilding文件夹
     private static void checkAndCopyBuildingFiles() {
-        LOGGER.info("[BuildingDataManager] 开始检查和复制建筑文件...");
-        
         try {
-            // 获取当前工作目录
             Path rootPath = Paths.get("").toAbsolutePath();
-            LOGGER.debug("[BuildingDataManager] 当前工作目录: {}", rootPath);
-            
-            // 检查simukraftbuilding文件夹是否存在
             Path simukraftBuildingPath;
             if (SIMUKRAFT_BUILDING_FOLDER.startsWith("/") || SIMUKRAFT_BUILDING_FOLDER.matches("[A-Za-z]:.*")) {
-                // 绝对路径，直接使用
                 simukraftBuildingPath = Paths.get(SIMUKRAFT_BUILDING_FOLDER);
             } else {
-                // 相对路径，与rootPath结合
                 simukraftBuildingPath = rootPath.resolve(SIMUKRAFT_BUILDING_FOLDER);
             }
-            
-            LOGGER.debug("[BuildingDataManager] 最终建筑文件夹路径: {}", simukraftBuildingPath);
-            
+
             if (!Files.exists(simukraftBuildingPath)) {
-                LOGGER.info("[BuildingDataManager] 创建simukraftbuilding文件夹: {}", simukraftBuildingPath);
                 Files.createDirectories(simukraftBuildingPath);
             }
-            
-            // 检查并创建所有类别子文件夹
+
             for (String category : CATEGORIES) {
                 Path categoryPath = simukraftBuildingPath.resolve(category);
                 if (!Files.exists(categoryPath)) {
-                    LOGGER.debug("[BuildingDataManager] 创建类别文件夹: {}", categoryPath);
                     Files.createDirectories(categoryPath);
                 }
             }
-            
-            // 复制建筑文件到simukraftbuilding文件夹
+
             for (String category : CATEGORIES) {
                 copyBuildingFilesForCategory(category, simukraftBuildingPath);
             }
-            
-            LOGGER.info("[BuildingDataManager] 建筑文件检查和复制完成");
-            
         } catch (Exception e) {
             LOGGER.error("[BuildingDataManager] 检查和复制建筑文件失败: {}", e.getMessage());
         }
     }
-    
+
     // 复制指定类别的建筑文件
     private static void copyBuildingFilesForCategory(String category, Path simukraftBuildingPath) {
         try {
-            LOGGER.debug("[BuildingDataManager] 复制类别 '{}' 的建筑文件...", category);
-            
-            // 获取当前工作目录（可能是 run 目录或项目根目录）
             Path workingDir = Paths.get("").toAbsolutePath();
             Path projectRoot = resolveProjectRoot(workingDir);
-            
-            // 尝试多种可能的源路径
+
             Path[] possibleSourcePaths = {
-                // 开发环境路径（相对于项目根目录）
                 projectRoot.resolve("src/main/resources").resolve(BUILDING_ROOT_PATH).resolve(category),
-                // 运行环境路径（相对于项目根目录）
                 projectRoot.resolve("build/resources/main").resolve(BUILDING_ROOT_PATH).resolve(category),
-                // 类路径资源
-                null, // 标记使用类路径
+                null,
             };
-            
+
             Path sourcePath = null;
             boolean useClasspath = false;
             for (Path path : possibleSourcePaths) {
@@ -507,24 +458,16 @@ public class BuildingDataManager {
                     useClasspath = true;
                     break;
                 }
-                LOGGER.debug("[BuildingDataManager] 检查源路径: {}", path);
                 if (Files.exists(path) && Files.isDirectory(path)) {
                     sourcePath = path;
-                    LOGGER.info("[BuildingDataManager] 找到有效源路径: {}", sourcePath);
                     break;
                 }
             }
-            
-            // 获取目标路径
+
             Path targetPath = simukraftBuildingPath.resolve(category);
-            
-            // 确保目标目录存在
             Files.createDirectories(targetPath);
-            
+
             if (sourcePath != null) {
-                LOGGER.debug("[BuildingDataManager] 使用源路径: {}", sourcePath);
-                
-                // 复制.sk、.nbt和.json文件
                 long[] copyCount = {0};
                 Files.walk(sourcePath, 1)
                     .filter(Files::isRegularFile)
@@ -533,35 +476,24 @@ public class BuildingDataManager {
                         try {
                             Path targetFilePath = targetPath.resolve(sourceFilePath.getFileName());
                             if (!Files.exists(targetFilePath) || Files.size(sourceFilePath) != Files.size(targetFilePath)) {
-                                LOGGER.debug("[BuildingDataManager] 复制文件: {} -> {}", sourceFilePath.getFileName(), targetFilePath);
                                 Files.copy(sourceFilePath, targetFilePath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                                 copyCount[0]++;
                             }
                         } catch (Exception e) {
-                            Path localTargetFilePath = targetPath.resolve(sourceFilePath.getFileName());
-                            LOGGER.error("[BuildingDataManager] 复制文件失败: {} -> {}: {}", sourceFilePath, localTargetFilePath, e.getMessage());
+                            LOGGER.error("[BuildingDataManager] 复制文件失败: {}", e.getMessage());
                         }
                     });
-                LOGGER.info("[BuildingDataManager] 类别 '{}' 复制完成，共复制 {} 个文件", category, copyCount[0]);
             } else if (useClasspath) {
-                LOGGER.info("[BuildingDataManager] 未找到本地源路径，尝试从类路径复制 '{}' 的建筑文件...", category);
-                
-                // 从类路径复制建筑文件
                 copyFilesFromClasspath(category, targetPath);
-            } else {
-                LOGGER.error("[BuildingDataManager] 错误：无法找到类别 '{}' 的建筑文件源", category);
             }
-            
         } catch (Exception e) {
-            LOGGER.error("[BuildingDataManager] 复制类别 '{}' 的建筑文件失败: {}", category, e.getMessage());
+            LOGGER.error("[BuildingDataManager] 复制类别 '{}' 失败: {}", category, e.getMessage());
         }
     }
     
     // 从类路径复制建筑文件到目标路径
     private static void copyFilesFromClasspath(String category, Path targetPath) {
         try {
-            LOGGER.info("[BuildingDataManager] 从类路径复制建筑文件到: {}", targetPath);
-            
             // 确保目标目录存在
             Files.createDirectories(targetPath);
             
@@ -643,8 +575,6 @@ public class BuildingDataManager {
                 }
             }
             
-            LOGGER.debug("[BuildingDataManager] 当前类别 '{}' 的文件列表: {}", category, categoryFiles);
-            
             // 复制文件
             for (String fileName : categoryFiles) {
                 String resourcePath = BUILDING_ROOT_PATH + "/" + category + "/" + fileName;
@@ -652,7 +582,6 @@ public class BuildingDataManager {
                 
                 // 检查文件是否已经存在
                 if (Files.exists(targetFilePath)) {
-                    LOGGER.debug("[BuildingDataManager] 文件已存在，跳过: {}", targetFilePath);
                     continue;
                 }
                 
@@ -660,9 +589,7 @@ public class BuildingDataManager {
                 java.io.InputStream inputStream = BuildingDataManager.class.getClassLoader().getResourceAsStream(resourcePath);
                 if (inputStream != null) {
                     try {
-                        LOGGER.debug("[BuildingDataManager] 从类路径加载资源: {}", resourcePath);
                         Files.copy(inputStream, targetFilePath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                        LOGGER.debug("[BuildingDataManager] 复制文件成功: {} -> {}", fileName, targetFilePath);
                     } catch (Exception e) {
                         LOGGER.error("[BuildingDataManager] 复制文件失败: {} -> {}: {}", resourcePath, targetFilePath, e.getMessage());
                     } finally {

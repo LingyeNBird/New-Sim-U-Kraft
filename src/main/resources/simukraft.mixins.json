@@ -15,7 +15,8 @@
         "MixinKeyboardHandler",
         "MixinBlockRenderDispatcher",
         "MixinAbstractContainerScreen",
-        "xaero.MixinWorldMapSession"
+        "xaero.MixinWorldMapSession",
+        "ldlib.MixinModularUIGuiContainer"
     ],
     "server": [
 

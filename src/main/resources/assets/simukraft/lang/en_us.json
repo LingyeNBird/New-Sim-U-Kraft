@@ -609,6 +609,11 @@
   "gui.mod_config_select.server.tooltip": "OP permissions required to edit server config",
   "gui.mod_config_select.description": "Please select configuration type to edit",
 
+  "gui.hud_editor.title": "Adjust HUD Position",
+  "gui.hud_editor.save": "Save",
+  "gui.hud_editor.reset": "Reset",
+  "gui.hud_editor.cancel": "Cancel",
+
   "gui.server_config.title": "§a§lSimukraft §fServer Config",
   "gui.server_config.page.general": "§e§lGeneral",
   "gui.server_config.page.npc_leveling": "§6§lNPC Leveling",

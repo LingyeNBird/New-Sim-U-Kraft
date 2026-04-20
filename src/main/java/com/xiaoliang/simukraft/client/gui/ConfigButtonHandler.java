@@ -80,7 +80,7 @@ public class ConfigButtonHandler {
         addAnimatedButtonRightOf(event, statsButton,
             button -> {
                 Minecraft.getInstance().setScreen(
-                    new ModMenuIntegration.ConfigSelectionScreen(event.getScreen())
+                    new ModMenuIntegration.ConfigSelectionScreenLDLib(event.getScreen())
                 );
             },
             Component.translatable("gui.config_button.title"));
@@ -118,7 +118,7 @@ public class ConfigButtonHandler {
                 } else {
                     // 否则打开配置界面
                     Minecraft.getInstance().setScreen(
-                        new ModMenuIntegration.ConfigSelectionScreen(event.getScreen())
+                        new ModMenuIntegration.ConfigSelectionScreenLDLib(event.getScreen())
                     );
                 }
             }

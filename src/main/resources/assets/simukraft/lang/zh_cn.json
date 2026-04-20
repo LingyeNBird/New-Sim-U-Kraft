@@ -609,6 +609,11 @@
   "gui.mod_config_select.description": "请选择要编辑的配置类型",
   "gui.mod_config_select.check_update": "检查更新",
 
+  "gui.hud_editor.title": "调整HUD位置",
+  "gui.hud_editor.save": "保存",
+  "gui.hud_editor.reset": "重置",
+  "gui.hud_editor.cancel": "取消",
+
   "gui.server_config.title": "§a§lSimukraft §f服务器配置",
   "gui.server_config.page.general": "§e§l通用配置",
   "gui.server_config.page.npc_leveling": "§6§lNPC 等级系统",

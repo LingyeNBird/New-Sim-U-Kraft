@@ -1,6 +1,7 @@
 package com.xiaoliang.simukraft.mixin;
 
 import com.xiaoliang.simukraft.inventory.WarehouseGridMenu;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.inventory.Slot;
@@ -28,6 +29,20 @@ public class MixinAbstractContainerScreen {
         // 检查是否是仓库菜单且是仓库槽位（前54个）
         if (screen.getMenu() instanceof WarehouseGridMenu && slot.index < 54) {
             // 跳过仓库槽位的渲染
+            ci.cancel();
+        }
+    }
+
+    /**
+     * simukraft - 防止在主菜单等场景下tick时NPE
+     * 当玩家为null时跳过tick逻辑
+     */
+    @Inject(method = "tick",
+            at = @At("HEAD"),
+            cancellable = true)
+    private void onTick(CallbackInfo ci) {
+        // 如果玩家为null，跳过tick以防止NPE
+        if (Minecraft.getInstance().player == null) {
             ci.cancel();
         }
     }

@@ -114,7 +114,7 @@ public class ServerConfigScreen extends ModularUIGuiContainer {
 
     @Override
     public void onClose() {
-        // 先恢复原始缩放
+        // menglan: 先恢复原始缩放
         restoreOriginalScale();
         
         Minecraft minecraft = Minecraft.getInstance();
@@ -123,26 +123,30 @@ public class ServerConfigScreen extends ModularUIGuiContainer {
         }
     }
 
-    // 保存原始缩放值 - 使用静态变量确保在构造函数中可用
+    // menglan: 保存原始缩放值 - 使用静态变量确保在构造函数中可用
     private static float originalScale = -1;
+    // menglan: 标记是否已经保存过原始缩放
+    private static boolean scaleSaved = false;
 
-    // 在渲染前设置3x缩放 - 静态方法供构造函数使用
+    // menglan: 在渲染前设置3x缩放 - 静态方法供构造函数使用
     private static void applyFixedScale() {
         Minecraft mc = Minecraft.getInstance();
         Window window = mc.getWindow();
         
-        if (originalScale < 0) {
+        // menglan: 只在第一次保存原始缩放
+        if (!scaleSaved) {
             originalScale = mc.options.guiScale().get().floatValue();
+            scaleSaved = true;
         }
         
-        // 设置3x缩放
+        // menglan: 设置3x缩放
         mc.options.guiScale().set(3);
         window.setGuiScale(3.0);
     }
 
-    // 恢复原始缩放
+    // menglan: 恢复原始缩放
     private void restoreOriginalScale() {
-        if (originalScale > 0) {
+        if (scaleSaved && originalScale > 0) {
             Minecraft mc = Minecraft.getInstance();
             Window window = mc.getWindow();
             
@@ -150,6 +154,8 @@ public class ServerConfigScreen extends ModularUIGuiContainer {
             mc.options.guiScale().set(scale);
             window.setGuiScale(originalScale);
             
+            // menglan: 重置标记，允许下次保存新的原始缩放
+            scaleSaved = false;
             originalScale = -1;
         }
     }

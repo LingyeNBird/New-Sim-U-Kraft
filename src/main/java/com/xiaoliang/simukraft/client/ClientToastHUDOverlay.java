@@ -11,11 +11,12 @@ import net.minecraft.util.FormattedCharSequence;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 
-import java.util.HashMap;
+import javax.annotation.Nonnull;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ClientToastHUDOverlay implements IGuiOverlay {
     public static final ClientToastHUDOverlay INSTANCE = new ClientToastHUDOverlay();
@@ -28,7 +29,7 @@ public class ClientToastHUDOverlay implements IGuiOverlay {
     private static final float DESCRIPTION_MIN_SCALE = 1.0F;
     
     // 存储每个玩家的toast显示状态
-    private static final Map<UUID, ToastInfo> playerToasts = new HashMap<>();
+    private static final Map<UUID, ToastInfo> playerToasts = new ConcurrentHashMap<>();
     
     private static class ToastInfo {
         final ResourceLocation texture;
@@ -72,7 +73,7 @@ public class ClientToastHUDOverlay implements IGuiOverlay {
     }
     
     @Override
-    public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
+    public void render(@Nonnull ForgeGui gui, @Nonnull GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
         Minecraft mc = Objects.requireNonNull(Minecraft.getInstance());
         if (mc.player == null) {
             return;
@@ -137,8 +138,8 @@ public class ClientToastHUDOverlay implements IGuiOverlay {
                 String largeText = "未知";
                 String mediumText = "";
                 if (toastInfo.upgrade != null) {
-                    largeText = toastInfo.upgrade.name();
-                    mediumText = toastInfo.upgrade.description();
+                    largeText = Objects.requireNonNullElse(toastInfo.upgrade.name(), "未知");
+                    mediumText = Objects.requireNonNullElse(toastInfo.upgrade.description(), "");
                 }
                 
                 // 标题和描述使用不同的可用宽度，避免长描述把标题一起压得过小。
@@ -146,8 +147,10 @@ public class ClientToastHUDOverlay implements IGuiOverlay {
                 int descriptionAreaWidth = Math.max(160, (int) (displayWidth * 0.68F));
                 float preferredTitleScale = Math.min(TITLE_MAX_SCALE, Math.max(2.0F, displayWidth / 320.0F));
                 float titleScale = computeBoundedScale(font.width(largeText), titleAreaWidth, preferredTitleScale, TITLE_MIN_SCALE);
-                List<FormattedCharSequence> titleLines = font.split(Component.literal(largeText),
-                        Math.max(1, (int) (titleAreaWidth / titleScale)));
+                List<FormattedCharSequence> titleLines = requireFormattedLines(font.split(
+                        Component.literal(largeText),
+                        Math.max(1, (int) (titleAreaWidth / titleScale))
+                ));
 
                 float preferredDescriptionScale = Math.min(DESCRIPTION_MAX_SCALE, Math.max(DESCRIPTION_MIN_SCALE, displayWidth / 360.0F));
                 TextLayout descriptionLayout = splitToFit(font, Component.literal(mediumText),
@@ -179,7 +182,7 @@ public class ClientToastHUDOverlay implements IGuiOverlay {
      */
     public static void showToast(String type, int upgradeLevel, UUID playerId) {
         ResourceLocation texture;
-        switch (type.toLowerCase()) {
+        switch (Objects.requireNonNull(type, "type").toLowerCase()) {
             case "w1":
                 texture = W1_TEXTURE;
                 break;
@@ -237,16 +240,16 @@ public class ClientToastHUDOverlay implements IGuiOverlay {
 
     private static TextLayout splitToFit(Font font, Component text, int maxWidth, float preferredScale) {
         float scale = preferredScale;
-        List<FormattedCharSequence> lines = font.split(text, Math.max(1, (int) (maxWidth / scale)));
+        List<FormattedCharSequence> lines = requireFormattedLines(font.split(text, Math.max(1, (int) (maxWidth / scale))));
         // 最多保留三行；如果行数过多，就逐步缩小字号而不是直接裁字。
         while (lines.size() > 3 && scale > DESCRIPTION_MIN_SCALE) {
             scale = Math.max(DESCRIPTION_MIN_SCALE, scale - 0.15F);
-            lines = font.split(text, Math.max(1, (int) (maxWidth / scale)));
+            lines = requireFormattedLines(font.split(text, Math.max(1, (int) (maxWidth / scale))));
         }
         return new TextLayout(lines, scale);
     }
 
-    private static void drawCenteredScaledLines(GuiGraphics guiGraphics, Font font, List<FormattedCharSequence> lines,
+    private static void drawCenteredScaledLines(@Nonnull GuiGraphics guiGraphics, @Nonnull Font font, @Nonnull List<FormattedCharSequence> lines,
                                                 int centerX, int startY, float scale, int color, boolean shadow) {
         int lineHeight = Math.max(1, Math.round(font.lineHeight * scale));
         int currentY = startY;
@@ -259,6 +262,11 @@ public class ClientToastHUDOverlay implements IGuiOverlay {
             guiGraphics.pose().popPose();
             currentY += lineHeight;
         }
+    }
+
+    @Nonnull
+    private static List<FormattedCharSequence> requireFormattedLines(List<FormattedCharSequence> lines) {
+        return Objects.requireNonNull(lines);
     }
 
     private record TextLayout(List<FormattedCharSequence> lines, float scale) {

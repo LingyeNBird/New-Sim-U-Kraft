@@ -9,6 +9,7 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -55,6 +56,7 @@ public class SimuMapManager {
     private int scanSpiralDirection = 0;
 
     private boolean initialized = false;
+    private int loadGeneration = 0;
 
     /**
      * 当前已初始化时所在的维度 key，用于检测维度/世界切换。
@@ -136,9 +138,9 @@ public class SimuMapManager {
         }
 
         if (currentDimension != null) {
-            SimuMapStorage.loadAll(currentWorldId, currentDimension, regions);
-            LOGGER.info("Simukraft: Map system initialized for world={} dim={}, loaded {} regions.",
-                    currentWorldId, SimuMapStorage.dimensionToDir(currentDimension), regions.size());
+            queueRegionLoad(currentWorldId, currentDimension);
+            LOGGER.info("Simukraft: Map system initialization queued for world={} dim={}.",
+                    currentWorldId, SimuMapStorage.dimensionToDir(currentDimension));
         } else {
             LOGGER.info("Simukraft: Map system initialized (dimension not yet known).");
         }
@@ -151,16 +153,12 @@ public class SimuMapManager {
         if (!initialized) return;
         initialized = false;
 
-        if (currentWorldId != null && currentDimension != null) {
-            SimuMapStorage.saveAll(currentWorldId, currentDimension, regions.values());
-            LOGGER.info("Simukraft: Saved {} regions for world={} dim={}.",
-                    regions.size(), currentWorldId, SimuMapStorage.dimensionToDir(currentDimension));
-        }
+        persistRegionsAsync(currentWorldId, currentDimension, List.copyOf(regions.values()), "shutdown");
 
         currentDimension = null;
         currentWorldId = null;
+        loadGeneration++;
 
-        regions.values().forEach(SimuMapRegion::release);
         regions.clear();
         renderingKeys.clear();
         renderExecutor.shutdownNow();
@@ -209,10 +207,9 @@ public class SimuMapManager {
         ResourceKey<Level> previousDimension = currentDimension;
         if (!dim.equals(previousDimension)) {
             if (currentWorldId != null && previousDimension != null) {
-                SimuMapStorage.saveAll(currentWorldId, previousDimension, regions.values());
-                LOGGER.info("Simukraft: Dimension changed from {} to {}, saved {} regions, loading new dimension cache.",
+                persistRegionsAsync(currentWorldId, previousDimension, List.copyOf(regions.values()), "dimension_change");
+                LOGGER.info("Simukraft: Dimension changed from {} to {}, queued async save for {} regions.",
                         SimuMapStorage.dimensionToDir(previousDimension), SimuMapStorage.dimensionToDir(dim), regions.size());
-                regions.values().forEach(SimuMapRegion::release);
                 regions.clear();
                 renderingKeys.clear();
                 resetScanCursor();
@@ -221,7 +218,7 @@ public class SimuMapManager {
             }
             currentDimension = dim;
             if (currentWorldId != null) {
-                SimuMapStorage.loadAll(currentWorldId, currentDimension, regions);
+                queueRegionLoad(currentWorldId, currentDimension);
             }
         }
 
@@ -377,6 +374,41 @@ public class SimuMapManager {
                 return true;
             }
             return false;
+        });
+    }
+
+    private void persistRegionsAsync(@Nullable String worldId, @Nullable ResourceKey<Level> dimension,
+                                     List<SimuMapRegion> regionSnapshot, String reason) {
+        if (regionSnapshot.isEmpty()) {
+            return;
+        }
+
+        for (SimuMapRegion region : regionSnapshot) {
+            region.releaseTexture();
+        }
+
+        if (worldId != null && dimension != null) {
+            SimuMapStorage.saveAllAsync(worldId, dimension, regionSnapshot, reason);
+            return;
+        }
+
+        for (SimuMapRegion region : regionSnapshot) {
+            region.discardData();
+        }
+    }
+
+    private void queueRegionLoad(String worldId, ResourceKey<Level> dimension) {
+        int currentLoadGeneration = ++loadGeneration;
+        SimuMapStorage.loadAllAsync(worldId, dimension, loadedRegions -> {
+            if (!initialized || currentLoadGeneration != loadGeneration) {
+                return;
+            }
+            if (currentDimension == null || !currentDimension.equals(dimension)) {
+                return;
+            }
+            regions.putAll(loadedRegions);
+            LOGGER.info("Simukraft: Async-loaded {} regions for world={} dim={}.",
+                    loadedRegions.size(), worldId, SimuMapStorage.dimensionToDir(dimension));
         });
     }
 

@@ -176,6 +176,14 @@ public class SimuMapRegion {
     }
 
     /**
+     * 仅释放内存数据。
+     * 用于异步持久化完成后清理旧世界残留数据，避免再次触碰渲染线程资源。
+     */
+    public void discardData() {
+        data = null;
+    }
+
+    /**
      * 到玩家的距离平方（用于排序）。
      */
     public double distToPlayer() {

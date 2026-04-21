@@ -23,6 +23,7 @@ import java.util.function.Consumer;
  */
 @Mod.EventBusSubscriber(modid = "simukraft", bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class NPCTaskScheduler {
+    private static final long SHUTDOWN_WAIT_MILLIS = 500L;
     private static final Logger LOGGER = LogManager.getLogger();
 
     // 线程池配置
@@ -115,22 +116,24 @@ public class NPCTaskScheduler {
             if (taskExecutor != null) {
                 taskExecutor.shutdown();
                 try {
-                    if (!taskExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    if (!taskExecutor.awaitTermination(SHUTDOWN_WAIT_MILLIS, TimeUnit.MILLISECONDS)) {
                         taskExecutor.shutdownNow();
                     }
                 } catch (InterruptedException e) {
                     taskExecutor.shutdownNow();
+                    Thread.currentThread().interrupt();
                 }
             }
 
             if (scheduledExecutor != null) {
                 scheduledExecutor.shutdown();
                 try {
-                    if (!scheduledExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    if (!scheduledExecutor.awaitTermination(SHUTDOWN_WAIT_MILLIS, TimeUnit.MILLISECONDS)) {
                         scheduledExecutor.shutdownNow();
                     }
                 } catch (InterruptedException e) {
                     scheduledExecutor.shutdownNow();
+                    Thread.currentThread().interrupt();
                 }
             }
 

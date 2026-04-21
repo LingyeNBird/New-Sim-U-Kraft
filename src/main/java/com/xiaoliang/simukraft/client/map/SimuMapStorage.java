@@ -11,8 +11,14 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.function.Consumer;
 
 /**
  * 地图数据持久化存储管理器。
@@ -49,6 +55,18 @@ public class SimuMapStorage {
 
     /** 根存储目录，位于 MC 游戏目录下 */
     private static final String ROOT_DIR = "simukraft_mapdata";
+
+    private static final ExecutorService SAVE_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "SimuMap-Save");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    private static final ExecutorService LOAD_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "SimuMap-Load");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private SimuMapStorage() {
     }
@@ -161,6 +179,27 @@ public class SimuMapStorage {
     }
 
     /**
+     * 异步保存一批区域，避免在客户端登录/退出阶段阻塞主线程。
+     * 这里直接保留区域数据引用，主线程只释放纹理资源，磁盘写入完成后再清理数据对象。
+     */
+    public static void saveAllAsync(String worldId, ResourceKey<Level> dimension,
+                                    Collection<SimuMapRegion> regions, String reason) {
+        List<SimuMapRegion> regionSnapshot = new ArrayList<>(regions);
+        if (regionSnapshot.isEmpty()) {
+            return;
+        }
+
+        SAVE_EXECUTOR.execute(() -> {
+            saveAll(worldId, dimension, regionSnapshot);
+            for (SimuMapRegion region : regionSnapshot) {
+                region.discardData();
+            }
+            LOGGER.info("Simukraft: Async-saved {} regions for world={} dim={} reason={}",
+                    regionSnapshot.size(), worldId, dimensionToDir(dimension), reason);
+        });
+    }
+
+    /**
      * 从磁盘加载指定存档和维度下的所有已存区域数据，填充到传入的 regions Map 中。
      * 仅加载文件存在且格式合法的区域；格式错误的文件会被跳过并记录警告。
      *
@@ -201,6 +240,26 @@ public class SimuMapStorage {
 
         LOGGER.debug("Simukraft: Loaded {} regions from world={} dim={}",
                 regions.size(), worldId, dimensionToDir(dimension));
+    }
+
+    /**
+     * 异步加载世界区域缓存，降低进入世界时的主线程卡顿。
+     */
+    public static void loadAllAsync(String worldId, ResourceKey<Level> dimension,
+                                    Map<Long, SimuMapRegion> regions) {
+        LOAD_EXECUTOR.execute(() -> loadAll(worldId, dimension, regions));
+    }
+
+    /**
+     * 异步加载到临时 Map，再由调用方决定是否合并，避免跨世界异步回灌。
+     */
+    public static void loadAllAsync(String worldId, ResourceKey<Level> dimension,
+                                    Consumer<Map<Long, SimuMapRegion>> callback) {
+        LOAD_EXECUTOR.execute(() -> {
+            Map<Long, SimuMapRegion> loadedRegions = new ConcurrentHashMap<>();
+            loadAll(worldId, dimension, loadedRegions);
+            callback.accept(loadedRegions);
+        });
     }
 
     /**

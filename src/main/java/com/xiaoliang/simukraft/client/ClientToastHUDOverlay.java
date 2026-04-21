@@ -18,6 +18,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+@SuppressWarnings("null")
 public class ClientToastHUDOverlay implements IGuiOverlay {
     public static final ClientToastHUDOverlay INSTANCE = new ClientToastHUDOverlay();
     private static final ResourceLocation W1_TEXTURE = ResourceLocation.parse("simukraft:textures/gui/w1.png");

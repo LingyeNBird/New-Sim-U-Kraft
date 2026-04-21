@@ -16,6 +16,9 @@ plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '0.7.0'
 }
 
-// ── 多项目联调：将 CityChat 作为子项目纳入 ──
-include ':citychat'
-project(':citychat').projectDir = file('../NSim-CityChat')
+// ── 多项目联调：仅在本地存在 CityChat 工程时才纳入，避免缺失时阻断 Gradle 同步和运行 ──
+def cityChatProjectDir = file('../NSim-CityChat')
+if (cityChatProjectDir.exists() && cityChatProjectDir.isDirectory()) {
+    include ':citychat'
+    project(':citychat').projectDir = cityChatProjectDir
+}

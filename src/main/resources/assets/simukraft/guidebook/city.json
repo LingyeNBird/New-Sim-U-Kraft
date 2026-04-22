@@ -1,0 +1,83 @@
+{
+  "parent": "directory",
+  "tab_icon": "tab_city",
+  "tab_index": 1,
+  "pages": [
+    {
+      "left_title": "guidebook.chapter.city.page1.left_title",
+      "right_title": "guidebook.chapter.city.page1.right_title",
+      "left_content": [
+        {
+          "type": "text",
+          "content": "guidebook.chapter.city.page1.left_1",
+          "spacing": 4
+        },
+        {
+          "type": "text",
+          "content": "guidebook.chapter.city.page1.left_2",
+          "spacing": 4
+        },
+        {
+          "type": "text",
+          "content": "guidebook.chapter.city.page1.left_3",
+          "spacing": 0
+        }
+      ],
+      "right_content": [
+        {
+          "type": "text",
+          "content": "guidebook.chapter.city.page1.right_1",
+          "spacing": 4
+        },
+        {
+          "type": "text",
+          "content": "guidebook.chapter.city.page1.right_2",
+          "spacing": 4
+        },
+        {
+          "type": "text",
+          "content": "guidebook.chapter.city.page1.right_3",
+          "spacing": 0
+        }
+      ]
+    },
+    {
+      "left_title": "guidebook.chapter.city.page2.left_title",
+      "right_title": "guidebook.chapter.city.page2.right_title",
+      "left_content": [
+        {
+          "type": "text",
+          "content": "guidebook.chapter.city.page2.left_1",
+          "spacing": 4
+        },
+        {
+          "type": "text",
+          "content": "guidebook.chapter.city.page2.left_2",
+          "spacing": 4
+        },
+        {
+          "type": "text",
+          "content": "guidebook.chapter.city.page2.left_3",
+          "spacing": 0
+        }
+      ],
+      "right_content": [
+        {
+          "type": "text",
+          "content": "guidebook.chapter.city.page2.right_1",
+          "spacing": 4
+        },
+        {
+          "type": "text",
+          "content": "guidebook.chapter.city.page2.right_2",
+          "spacing": 4
+        },
+        {
+          "type": "text",
+          "content": "guidebook.chapter.city.page2.right_3",
+          "spacing": 0
+        }
+      ]
+    }
+  ]
+}

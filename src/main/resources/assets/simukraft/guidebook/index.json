@@ -1,0 +1,10 @@
+{
+  "index_page": "directory",
+  "pages": [
+    "directory.json",
+    "prologue.json",
+    "city.json",
+    "commerce.json",
+    "logistics.json"
+  ]
+}

@@ -3,8 +3,6 @@
   "pages": [
     "directory.json",
     "prologue.json",
-    "city.json",
-    "commerce.json",
-    "logistics.json"
+    "items.json"
   ]
 }

@@ -22,35 +22,13 @@
     },
     {
       "type": "link",
-      "content": "guidebook.directory.city.name",
-      "target": "city",
+      "content": "guidebook.directory.items.name",
+      "target": "items",
       "spacing": 4
     },
     {
       "type": "text",
-      "content": "guidebook.directory.city.desc",
-      "spacing": 8
-    },
-    {
-      "type": "link",
-      "content": "guidebook.directory.commerce.name",
-      "target": "commerce",
-      "spacing": 4
-    },
-    {
-      "type": "text",
-      "content": "guidebook.directory.commerce.desc",
-      "spacing": 8
-    },
-    {
-      "type": "link",
-      "content": "guidebook.directory.logistics.name",
-      "target": "logistics",
-      "spacing": 4
-    },
-    {
-      "type": "text",
-      "content": "guidebook.directory.logistics.desc",
+      "content": "guidebook.directory.items.desc",
       "spacing": 0
     }
   ]

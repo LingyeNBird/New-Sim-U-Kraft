@@ -8,6 +8,11 @@
       "right_title": "guidebook.chapter.prologue.page1.right_title",
       "left_content": [
         {
+          "type": "item",
+          "item_id": "simukraft:build_box",
+          "spacing": 4
+        },
+        {
           "type": "text",
           "content": "guidebook.chapter.prologue.page1.left_1",
           "spacing": 8
@@ -28,6 +33,11 @@
           "type": "hint",
           "content": "guidebook.chapter.prologue.page1.right_1",
           "spacing": 0
+        },
+        {
+          "type": "hint",
+          "spacing": 4,
+          "content": "guidebook.chapter.prologue.page0_right_el1_1"
         }
       ]
     }

@@ -15,7 +15,7 @@ import java.util.List;
 
 /**
  * 指南书页面数据类
- * 支持多页、物品引用等丰富内容
+ * 支持多页、物品引用、图片等丰富内容
  */
 @SuppressWarnings("null")
 public class GuideBookPage {
@@ -168,15 +168,18 @@ public class GuideBookPage {
                 String itemId = obj.has("item_id") ? GsonHelper.getAsString(obj, "item_id") : null;
                 String itemNbt = obj.has("item_nbt") ? GsonHelper.getAsString(obj, "item_nbt") : null;
                 String target = obj.has("target") ? GsonHelper.getAsString(obj, "target") : null;
+                String imageUrl = obj.has("image_url") ? GsonHelper.getAsString(obj, "image_url") : null;
+                int imageWidth = GsonHelper.getAsInt(obj, "image_width", 64);
+                int imageHeight = GsonHelper.getAsInt(obj, "image_height", 64);
 
-                elements.add(new PageElement(type, content, spacing, itemId, itemNbt, target));
+                elements.add(new PageElement(type, content, spacing, itemId, itemNbt, target, imageUrl, imageWidth, imageHeight));
             }
             return elements;
         }
     }
 
     /**
-     * 页面元素（文本、标题、提示、物品、链接等）
+     * 页面元素（文本、标题、提示、物品、链接、图片等）
      */
     public static class PageElement {
         private final String type;
@@ -185,16 +188,23 @@ public class GuideBookPage {
         private final String itemId; // 物品ID
         private final String itemNbt; // 物品NBT
         private final String target; // 链接目标章节ID
+        private final String imageUrl; // 图片地址（本地ResourceLocation或远程URL）
+        private final int imageWidth; // 图片显示宽度
+        private final int imageHeight; // 图片显示高度
         private ItemStack cachedItem; // 缓存的物品栈
 
         public PageElement(String type, String contentKey, int spacing,
-                           @Nullable String itemId, @Nullable String itemNbt, @Nullable String target) {
+                           @Nullable String itemId, @Nullable String itemNbt, @Nullable String target,
+                           @Nullable String imageUrl, int imageWidth, int imageHeight) {
             this.type = type;
             this.contentKey = contentKey;
             this.spacing = spacing;
             this.itemId = itemId;
             this.itemNbt = itemNbt;
             this.target = target;
+            this.imageUrl = imageUrl;
+            this.imageWidth = Math.max(1, imageWidth);
+            this.imageHeight = Math.max(1, imageHeight);
         }
 
         public String getType() {
@@ -239,6 +249,10 @@ public class GuideBookPage {
             return "link".equals(type);
         }
 
+        public boolean isImage() {
+            return "image".equals(type);
+        }
+
         public boolean hasItem() {
             return itemId != null && !itemId.isEmpty();
         }
@@ -256,6 +270,19 @@ public class GuideBookPage {
         @Nullable
         public String getTarget() {
             return target;
+        }
+
+        @Nullable
+        public String getImageUrl() {
+            return imageUrl;
+        }
+
+        public int getImageWidth() {
+            return imageWidth;
+        }
+
+        public int getImageHeight() {
+            return imageHeight;
         }
 
         /**

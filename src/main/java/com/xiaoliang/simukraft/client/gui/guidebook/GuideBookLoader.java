@@ -117,6 +117,8 @@ public class GuideBookLoader extends SimplePreparableReloadListener<Map<String, 
     protected void apply(@Nonnull Map<String, GuideBookPage> pages, @Nonnull ResourceManager resourceManager, @Nonnull ProfilerFiller profiler) {
         PAGES.clear();
         PAGES.putAll(pages);
+        // 资源重载时清除图片缓存，避免内存泄漏和旧纹理残留
+        GuideBookImageCache.clear();
         Simukraft.LOGGER.info("Loaded {} guidebook pages", PAGES.size());
         for (Map.Entry<String, GuideBookPage> entry : PAGES.entrySet()) {
             GuideBookPage page = entry.getValue();

@@ -126,6 +126,16 @@ public class GuideBookScreen extends Screen {
                 this.currentChapterId = this.currentChapter.getId();
             }
         }
+        
+        // 设置图片加载完成回调，自动刷新界面
+        GuideBookImageCache.setOnImageLoadedCallback((url) -> {
+            if (this.minecraft != null) {
+                this.minecraft.execute(() -> {
+                    // 触发界面重绘
+                    this.init(this.minecraft, this.width, this.height);
+                });
+            }
+        });
 
         int bookX = this.width / 2 - BOOK_WIDTH / 2;
         int bookY = this.height / 2 - BOOK_HEIGHT / 2;
@@ -146,6 +156,13 @@ public class GuideBookScreen extends Screen {
         this.addRenderableWidget(this.nextPageButton);
 
         updatePageButtons();
+    }
+    
+    @Override
+    public void onClose() {
+        // 清理图片加载回调
+        GuideBookImageCache.setOnImageLoadedCallback(null);
+        super.onClose();
     }
 
     private void turnPage(int direction) {
@@ -510,6 +527,11 @@ public class GuideBookScreen extends Screen {
 
     private int renderElement(GuiGraphics guiGraphics, GuideBookPage.PageElement element,
                               int x, int y, int textWidth, int bodyColor, int hintColor, boolean isLeftPage) {
+        // 如果是图片类型，渲染图片
+        if (element.isImage()) {
+            return renderImageElement(guiGraphics, element, x, y, textWidth);
+        }
+
         // 如果是物品类型，渲染物品图标
         if (element.isItem() || element.hasItem()) {
             ItemStack stack = element.getItemStack();
@@ -528,6 +550,52 @@ public class GuideBookScreen extends Screen {
         // 渲染普通文本
         int color = element.isHint() ? hintColor : bodyColor;
         return drawWrappedText(guiGraphics, nn(element.getContent()), x, y, textWidth, color, element.getSpacing());
+    }
+
+    /**
+     * 渲染图片元素，支持本地 ResourceLocation 和远程 URL
+     */
+    private int renderImageElement(GuiGraphics guiGraphics, GuideBookPage.PageElement element,
+                                   int x, int y, int maxWidth) {
+        String imageUrl = element.getImageUrl();
+        if (imageUrl == null || imageUrl.isEmpty()) {
+            return y + element.getSpacing();
+        }
+
+        GuideBookImageCache.ImageEntry entry = GuideBookImageCache.getOrLoad(imageUrl);
+
+        int drawWidth = element.getImageWidth();
+        int drawHeight = element.getImageHeight();
+
+        // 限制最大宽度不超过页面宽度
+        if (drawWidth > maxWidth) {
+            float scale = (float) maxWidth / drawWidth;
+            drawWidth = maxWidth;
+            drawHeight = Math.round(drawHeight * scale);
+        }
+
+        if (entry.loaded && entry.texture != null) {
+            // 图片已加载，正常渲染
+            guiGraphics.blit(entry.texture, x, y, 0, 0, drawWidth, drawHeight, drawWidth, drawHeight);
+        } else {
+            // 图片加载中或失败，显示占位框
+            int placeholderColor = 0xFFCCCCCC;
+            int borderColor = 0xFF999999;
+            guiGraphics.fill(x, y, x + drawWidth, y + drawHeight, placeholderColor);
+            guiGraphics.fill(x, y, x + drawWidth, y + 1, borderColor);
+            guiGraphics.fill(x, y + drawHeight - 1, x + drawWidth, y + drawHeight, borderColor);
+            guiGraphics.fill(x, y, x + 1, y + drawHeight, borderColor);
+            guiGraphics.fill(x + drawWidth - 1, y, x + drawWidth, y + drawHeight, borderColor);
+
+            // 显示加载中提示
+            String loadingText = entry.loaded ? "[图片加载失败]" : "[图片加载中...]";
+            int textColor = 0xFF666666;
+            int textX = x + (drawWidth - this.font.width(loadingText)) / 2;
+            int textY = y + (drawHeight - this.font.lineHeight) / 2;
+            guiGraphics.drawString(this.font, loadingText, textX, textY, textColor, false);
+        }
+
+        return y + drawHeight + element.getSpacing();
     }
 
     /**

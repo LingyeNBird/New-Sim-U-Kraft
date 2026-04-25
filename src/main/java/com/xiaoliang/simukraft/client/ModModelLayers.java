@@ -6,9 +6,14 @@ import net.minecraft.resources.ResourceLocation;
 
 @SuppressWarnings("null")
 public class ModModelLayers {
-    public static final ModelLayerLocation CUSTOM_ENTITY = 
+    // menglan: Alex纤细手臂模型
+    public static final ModelLayerLocation CUSTOM_ENTITY =
             new ModelLayerLocation(ResourceLocation.fromNamespaceAndPath(Simukraft.MOD_ID, "custom_entity"), "main");
-    
-    public static final ModelLayerLocation FLOATING_BUILD_BOX = 
+
+    // menglan: Steve粗手臂模型（皮肤文件名以_f结尾时使用）
+    public static final ModelLayerLocation CUSTOM_ENTITY_STEVE =
+            new ModelLayerLocation(ResourceLocation.fromNamespaceAndPath(Simukraft.MOD_ID, "custom_entity_steve"), "main");
+
+    public static final ModelLayerLocation FLOATING_BUILD_BOX =
             new ModelLayerLocation(ResourceLocation.fromNamespaceAndPath(Simukraft.MOD_ID, "floating_build_box"), "main");
 }

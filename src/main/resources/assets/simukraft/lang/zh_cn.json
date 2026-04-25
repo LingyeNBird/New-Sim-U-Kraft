@@ -939,8 +939,8 @@
   "gui.building_material_store_npc.sell": "我想要卖建材",
   "gui.building_material_store_npc.greeting": "你好！今天有什么需要帮助的吗？",
 
-  "message.block_replacement_chest.no_chest": "§c建筑盒5x5范围内没有找到箱子！",
-  "message.block_replacement_chest.place_chest_hint": "§7请在建筑盒附近放置箱子后重试",
+  "message.block_replacement_chest.no_chest": "§c建筑盒六个面紧贴位置没有找到箱子！",
+  "message.block_replacement_chest.place_chest_hint": "§7请在建筑盒六个面紧贴位置放置箱子后重试",
 
   "message.simukraft.planning.task_created": "§a已创建%s任务，共 %d 个方块，扣除 ¥%.2f",
 
@@ -989,7 +989,7 @@
 
   "gui.block_replacement_chest.build_box_location": "§a建筑盒位置: (%d, %d, %d)",
   "gui.block_replacement_chest.selection": "§7选区: (%d, %d, %d) 到 (%d, %d, %d)",
-  "gui.block_replacement_chest.found_chests": "§f在建筑盒5x5范围内找到 %d 个箱子，请点击选择一个：",
+  "gui.block_replacement_chest.found_chests": "§f在建筑盒六个面紧贴位置找到 %d 个箱子，请点击选择一个：",
   "gui.block_replacement_chest.title.fill": "§e方块填充 - 选择箱子",
   "gui.block_replacement_chest.title.replace": "§e方块替换 - 选择箱子",
 

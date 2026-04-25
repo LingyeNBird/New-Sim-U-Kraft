@@ -932,8 +932,8 @@
   "gui.building_material_store_npc.sell": "I want to sell materials",
   "gui.building_material_store_npc.greeting": "Hello! What can I help you with today?",
 
-  "message.block_replacement_chest.no_chest": "§cNo chest found within 5x5 range of build box!",
-  "message.block_replacement_chest.place_chest_hint": "§7Please place a chest near the build box and try again",
+  "message.block_replacement_chest.no_chest": "§cNo chest found at the six adjacent faces of build box!",
+  "message.block_replacement_chest.place_chest_hint": "§7Please place a chest at the six adjacent faces of the build box and try again",
   "message.simukraft.commercial.no_delivery_space": "§cThe shop chests do not have enough room for this material purchase",
 
   "message.simukraft.planning.task_created": "§aCreated %s task, %d blocks total, deducted ¥%.2f",
@@ -981,7 +981,7 @@
 
   "gui.block_replacement_chest.build_box_location": "§aBuild Box Location: (%d, %d, %d)",
   "gui.block_replacement_chest.selection": "§7Selection: (%d, %d, %d) to (%d, %d, %d)",
-  "gui.block_replacement_chest.found_chests": "§fFound %d chests within 5x5 range of build box, click to select:",
+  "gui.block_replacement_chest.found_chests": "§fFound %d chests at the six adjacent faces of build box, click to select:",
   "gui.block_replacement_chest.title.fill": "§eBlock Fill - Select Chest",
   "gui.block_replacement_chest.title.replace": "§eBlock Replacement - Select Chest",
 

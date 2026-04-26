@@ -50,9 +50,17 @@ public class NPCInteractionHandler {
     @SubscribeEvent
     public static void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
         if (event.getTarget() instanceof CustomEntity npc && event.getHand() == InteractionHand.MAIN_HAND) {
+            Player player = event.getEntity();
+
+            // simukraft: 如果NPC正在睡觉，右键唤醒NPC
+            if (npc.isSleeping() && event.getSide().isServer()) {
+                wakeUpNPC(npc, player);
+                event.setCanceled(true);
+                return;
+            }
+
             if (event.getSide().isClient()) {
                 playGenderSound(npc);
-                Player player = event.getEntity();
                 // 潜行时右键永远打开NPC详细信息界面
                 if (player.isShiftKeyDown()) {
                     openNPCDetailScreen(npc);
@@ -61,6 +69,29 @@ public class NPCInteractionHandler {
                 }
             }
             event.setCanceled(true);
+        }
+    }
+
+    /**
+     * 唤醒正在睡觉的NPC（menglannnn: 玩家右键唤醒）
+     * @param npc 正在睡觉的NPC
+     * @param player 唤醒NPC的玩家
+     */
+    private static void wakeUpNPC(CustomEntity npc, Player player) {
+        if (!npc.isSleeping()) return;
+
+        // 在服务端执行唤醒
+        if (npc.level() instanceof ServerLevel serverLevel) {
+            com.xiaoliang.simukraft.utils.NPCRestHandler.wakeUpNPC(npc, serverLevel);
+
+            // 发送消息给玩家
+            player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                "message.simukraft.npc_woken_up", npc.getFullName()));
+
+            // 播放唤醒音效
+            serverLevel.playSound(null, npc.blockPosition(),
+                net.minecraft.sounds.SoundEvents.VILLAGER_YES,
+                net.minecraft.sounds.SoundSource.NEUTRAL, 1.0F, 1.0F);
         }
     }
 

@@ -181,12 +181,11 @@ public abstract class ConfigurableListScreenLDLib extends ModularUIGuiContainer 
     @Override
     public void onClose() {
         // simukraft: 子界面不恢复缩放，由父界面自己管理
-        // GuiScaleManager.restore();
+        // 父界面的init()会重新应用正确的缩放
         currentInstance = null;
         // simukraft: 清除 JEI 拖拽目标
         JEIIntegrationManager.getInstance().clearDropTargets();
         Minecraft.getInstance().setScreen(parent);
-        // simukraft: 父界面会在init/render中重新应用3x
     }
 
     @Override

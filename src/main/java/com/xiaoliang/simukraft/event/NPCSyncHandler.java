@@ -21,14 +21,25 @@ public class NPCSyncHandler {
     public static void onEntityJoinLevel(EntityJoinLevelEvent event) {
         if (event.getLevel().isClientSide()) return;
         if (!(event.getEntity() instanceof CustomEntity npc)) return;
-        
+
         // 当NPC实体加载时，同步其工作状态
         MinecraftServer server = event.getLevel().getServer();
+
+        // simukraft: 检查NPC是否正在睡觉，如果是则恢复睡觉状态到NPCRestHandler
+        if (npc.isSleeping() && server != null) {
+            npc.getSleepingPos().ifPresent(bedPos -> {
+                com.xiaoliang.simukraft.utils.NPCRestHandler.restoreSleepingNPC(
+                    npc,
+                    (net.minecraft.server.level.ServerLevel) event.getLevel(),
+                    bedPos
+                );
+            });
+        }
 
         if (server != null && npc.getNpcId() != -1) {
             String npcIdStr = "npc" + npc.getNpcId();
             String[] jobData = NPCDataManager.getJobData(server, npcIdStr);
-            
+
             if (jobData != null && jobData.length >= 2) {
                 String status = jobData[0];
                 String job = jobData[1];

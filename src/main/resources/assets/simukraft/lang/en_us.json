@@ -430,6 +430,7 @@
   "message.simukraft.welcome.refactor_edition": "Official QQ Groups: 1046985079 | 638462178 | 1084921979.\n[If you paid for this content, congratulations, you've been scammed!]",
   "message.simukraft.current_mode": "Current SimuKraft Game Mode: %s",
   "message.simukraft.npc_not_teleported": "If the NPC didn't teleport after hiring, please hire again!",
+  "message.simukraft.npc_woken_up": "§eYou woke up %s",
   "simukraft.subtitle.male_hello": "A male greets you",
   "simukraft.subtitle.female_hello": "A female greets you",
   "simukraft.subtitle.male_hurt": "Male hurt",

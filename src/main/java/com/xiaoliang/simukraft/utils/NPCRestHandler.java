@@ -38,9 +38,12 @@ public class NPCRestHandler {
     private static final int BED_SEARCH_HORIZONTAL_RADIUS = 8;
     private static final int BED_SEARCH_VERTICAL_RADIUS = 4;
     private static final long BED_REPATH_INTERVAL_TICKS = 40L;
+    private static final long BED_COOLDOWN_TICKS = 1000L; // simukraft: 上床冷却时间（5秒 = 100 ticks）
 
     // 存储正在休息的NPC数据
     private static final Map<UUID, RestData> restingNPCs = new ConcurrentHashMap<>();
+    // 存储NPC上次上床时间（menglannnn: 用于上床冷却）
+    private static final Map<UUID, Long> npcLastBedTime = new ConcurrentHashMap<>();
     // 存储NPC的休息子状态
     private static final Map<UUID, WorkSubState> npcSubStates = new ConcurrentHashMap<>();
     // 存储NPC的住宅位置
@@ -326,6 +329,48 @@ public class NPCRestHandler {
             return false;
         }
         return restingNPCs.containsKey(npcUuid) || goingToWorkNPCs.containsKey(npcUuid);
+    }
+
+    /**
+     * 恢复NPC睡觉状态（menglannnn: 用于重新加载游戏后恢复正在睡觉的NPC）
+     * @param npc NPC实体
+     * @param level 服务器世界
+     * @param bedPos 床位置（床头）
+     */
+    public static void restoreSleepingNPC(CustomEntity npc, ServerLevel level, BlockPos bedPos) {
+        if (npc == null || level == null || bedPos == null) return;
+
+        UUID npcUuid = npc.getUUID();
+
+        // 如果NPC已经在休息列表中，不需要重复添加
+        if (restingNPCs.containsKey(npcUuid)) {
+            return;
+        }
+
+        // 获取NPC的住宅位置
+        BlockPos homePos = getNPCHomePosition(npc, level.getServer());
+        if (homePos == null) {
+            homePos = bedPos;
+        }
+
+        // 创建休息数据，设置为睡觉状态
+        RestData restData = new RestData(npc, level);
+        restData.homePos = homePos;
+        restData.bedPos = bedPos;
+        restData.restStage = REST_STAGE_SLEEPING;
+        restData.hasArrivedHome = true;
+
+        restingNPCs.put(npcUuid, restData);
+        npcSubStates.put(npcUuid, WorkSubState.RESTING);
+        npcHomePositions.put(npcUuid, homePos);
+
+        // 设置NPC状态
+        npc.setWorkSubState(WorkSubState.RESTING);
+        npc.setStatusLabel("gui.npc.status.at_home");
+        npc.setNoAi(true);
+
+        LOGGER.info("[NPCRestHandler] NPC {} 重新加载后恢复睡觉状态，床位置: {}",
+            npc.getFullName(), bedPos);
     }
 
     /**
@@ -1204,7 +1249,7 @@ public class NPCRestHandler {
         double bedDistance = npc.position().distanceTo(Vec3.atCenterOf(restData.bedPos));
 
         if (bedDistance <= 2.2D) {
-            tryStartSleeping(npc, restData.bedPos);
+            tryStartSleeping(npc, restData.bedPos, level);
             restData.restStage = REST_STAGE_SLEEPING;
             npcPathfindingStatus.put(npc.getUUID(), false);
             return;
@@ -1232,7 +1277,7 @@ public class NPCRestHandler {
                     bedStandPos.getY() + 0.1,
                     bedStandPos.getZ() + 0.5
                 );
-                tryStartSleeping(npc, restData.bedPos);
+                tryStartSleeping(npc, restData.bedPos, level);
                 restData.restStage = REST_STAGE_SLEEPING;
                 npcPathfindingStatus.put(npc.getUUID(), false);
             }
@@ -1264,7 +1309,7 @@ public class NPCRestHandler {
         npc.setStatusLabel("gui.npc.status.at_home");
     }
 
-    private static void tryStartSleeping(CustomEntity npc, BlockPos bedPos) {
+    private static void tryStartSleeping(CustomEntity npc, BlockPos bedPos, ServerLevel level) {
         if (npc == null || bedPos == null) {
             return;
         }
@@ -1275,15 +1320,55 @@ public class NPCRestHandler {
             return;
         }
 
+        // simukraft: 检查上床冷却时间
+        UUID npcUuid = npc.getUUID();
+        long currentTime = level.getGameTime();
+        Long lastBedTime = npcLastBedTime.get(npcUuid);
+        if (lastBedTime != null && (currentTime - lastBedTime) < BED_COOLDOWN_TICKS) {
+            // 冷却中，不上床
+            return;
+        }
+
         npc.getNavigation().stop();
         npc.setDeltaMovement(Objects.requireNonNull(Vec3.ZERO));
+
+        // simukraft: 记录上床时间
+        npcLastBedTime.put(npcUuid, currentTime);
+
+        // simukraft: 计算床头位置（床尾朝向的反方向）
+        BlockPos headPos = getBedHeadPos(level, bedPos);
+
+        // simukraft: 将NPC传送到床头位置
         npc.teleportTo(
-            bedPos.getX() + 0.5,
-            bedPos.getY() + 0.5625D,
-            bedPos.getZ() + 0.5
+            headPos.getX() + 0.5,
+            headPos.getY() + 0.5625D,
+            headPos.getZ() + 0.5
         );
-        npc.startSleeping(bedPos);
+
+        // simukraft: 使用床头位置开始睡觉
+        npc.startSleeping(headPos);
         npc.setNoAi(true);
+    }
+
+    /**
+     * 获取床头位置（menglannnn: 根据床尾位置计算床头位置）
+     * @param level 世界
+     * @param footPos 床尾位置
+     * @return 床头位置
+     */
+    private static BlockPos getBedHeadPos(ServerLevel level, BlockPos footPos) {
+        if (level == null || footPos == null) {
+            return footPos;
+        }
+
+        BlockState bedState = level.getBlockState(footPos);
+        if (bedState.getBlock() instanceof BedBlock && bedState.hasProperty(BedBlock.FACING)) {
+            Direction facing = bedState.getValue(BedBlock.FACING);
+            // 床头在床尾朝向的方向上
+            return footPos.relative(facing);
+        }
+
+        return footPos;
     }
 
     private static void stopSleepingIfNeeded(CustomEntity npc) {
@@ -1297,6 +1382,53 @@ public class NPCRestHandler {
 
         npc.stopSleeping();
         npc.setNoAi(false);
+    }
+
+    /**
+     * 玩家唤醒NPC（menglannnn: 玩家右键唤醒正在睡觉的NPC）
+     * @param npc 正在睡觉的NPC
+     * @param level 服务器世界
+     */
+    public static void wakeUpNPC(CustomEntity npc, ServerLevel level) {
+        if (npc == null || level == null || !npc.isSleeping()) {
+            return;
+        }
+
+        UUID npcUuid = npc.getUUID();
+        RestData restData = restingNPCs.get(npcUuid);
+
+        // 计算唤醒位置（床旁边的站立位置）
+        BlockPos wakePos = null;
+        if (restData != null && restData.bedPos != null) {
+            wakePos = findBedStandPos(level, restData.bedPos);
+        } else {
+            // 如果没有休息数据，使用NPC当前位置
+            wakePos = findBedStandPos(level, npc.getSleepingPos().orElse(npc.blockPosition()));
+        }
+
+        // 停止睡觉
+        stopSleepingIfNeeded(npc);
+        npc.getNavigation().stop();
+        npc.setWorking(false);
+
+        // 传送到唤醒位置
+        if (wakePos != null) {
+            npc.teleportTo(wakePos.getX() + 0.5, wakePos.getY() + 0.1, wakePos.getZ() + 0.5);
+        }
+        npc.setDeltaMovement(Objects.requireNonNull(Vec3.ZERO));
+
+        // 清除休息数据
+        if (restData != null) {
+            restingNPCs.remove(npcUuid);
+            npcSubStates.remove(npcUuid);
+        }
+
+        // 设置NPC为空闲状态
+        npc.setWorkStatus(WorkStatus.IDLE);
+        npc.setWorkSubState(WorkSubState.NONE);
+        npc.setStatusLabel("gui.npc.status.idle");
+
+        LOGGER.info("[NPCRestHandler] NPC {} 被玩家唤醒", npc.getFullName());
     }
 
     private static void wakeUpAtHome(CustomEntity npc, ServerLevel level, RestData restData) {
@@ -1437,7 +1569,6 @@ public class NPCRestHandler {
         if (npc == null || level == null || restData == null) return;
 
         UUID npcUuid = npc.getUUID();
-        wakeUpAtHome(npc, level, restData);
 
         // 获取NPC的工作状态和职业
         WorkStatus previousWorkStatus = npcPreviousWorkStatus.getOrDefault(npcUuid, WorkStatus.IDLE);
@@ -1445,8 +1576,12 @@ public class NPCRestHandler {
 
         // 只有被雇佣的NPC才需要提前出发
         if (previousWorkStatus != WorkStatus.WORKING || "unemployed".equals(previousJob)) {
+            // simukraft: 未被雇佣的NPC不应该提前唤醒，继续睡觉直到正常起床时间
             return;
         }
+
+        // simukraft: 被雇佣的NPC才唤醒并准备出发
+        wakeUpAtHome(npc, level, restData);
 
         // 获取工作位置
         BlockPos workPos = getWorkplacePosition(npc, level.getServer(), previousJob);

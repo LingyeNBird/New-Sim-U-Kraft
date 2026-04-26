@@ -169,6 +169,19 @@ public class CustomEntity extends Animal {
         return false;
     }
 
+    /**
+     * 获取实体尺寸（menglannnn: 睡觉时扩大碰撞箱便于玩家右键唤醒）
+     */
+    @Override
+    public net.minecraft.world.entity.EntityDimensions getDimensions(net.minecraft.world.entity.Pose pose) {
+        // 如果正在睡觉，扩大碰撞箱
+        if (this.isSleeping()) {
+            // 扩大碰撞箱：宽度从0.6扩大到1.2，高度从1.8保持1.8
+            return net.minecraft.world.entity.EntityDimensions.scalable(1.2F, 1.8F);
+        }
+        return super.getDimensions(pose);
+    }
+
     @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));

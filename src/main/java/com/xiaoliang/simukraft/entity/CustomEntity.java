@@ -177,7 +177,7 @@ public class CustomEntity extends Animal {
         // 如果正在睡觉，扩大碰撞箱
         if (this.isSleeping()) {
             // 扩大碰撞箱：宽度从0.6扩大到1.2，高度从1.8保持1.8
-            return net.minecraft.world.entity.EntityDimensions.scalable(1.2F, 1.8F);
+            return net.minecraft.world.entity.EntityDimensions.scalable(0.6F, 1.8F);
         }
         return super.getDimensions(pose);
     }
@@ -198,7 +198,7 @@ public class CustomEntity extends Animal {
                 .add(Attributes.MOVEMENT_SPEED, 0.25D)
                 .add(Attributes.ATTACK_DAMAGE, 3.0D)
                 .add(Attributes.JUMP_STRENGTH, 0.5D)
-                .add(Attributes.KNOCKBACK_RESISTANCE, 1.0D);
+                .add(Attributes.KNOCKBACK_RESISTANCE, 0.0D); // simukraft: 降低击退抗性，让NPC可以被正常击退
     }
 
     @Override
@@ -214,20 +214,15 @@ public class CustomEntity extends Animal {
             return;
         }
 
+        // simukraft: 睡觉时不受伤害影响，防止"躺着跑"
+        if (this.isSleeping()) {
+            return;
+        }
+
+        // simukraft: 调用父类方法处理伤害和击退，不再手动覆盖setDeltaMovement
         if (!isWorking) {
             super.actuallyHurt(damageSource, amount);
             // 不再立即恢复满血，NPC现在会正常受到伤害
-        }
-
-        if (damageSource.getEntity() != null && !isWorking) {
-            Vec3 attackerPos = damageSource.getEntity().position();
-            Vec3 thisPos = this.position();
-            Vec3 direction = thisPos.subtract(attackerPos).normalize();
-            this.setDeltaMovement(
-                    direction.x * 0.5,
-                    0.6,
-                    direction.z * 0.5
-            );
         }
 
         long currentTime = System.currentTimeMillis();
@@ -239,9 +234,11 @@ public class CustomEntity extends Animal {
 
     @Override
     public void knockback(double strength, double x, double z) {
-        if (!isWorking) {
-            super.knockback(strength, x, z);
+        // simukraft: 睡觉时不能被击退，防止"躺着跑"
+        if (this.isSleeping()) {
+            return;
         }
+        super.knockback(strength, x, z);
     }
 
     @Override
@@ -680,8 +677,9 @@ public class CustomEntity extends Animal {
                 aiRestoreDelay--;
                 if (aiRestoreDelay <= 0) {
                     this.setNoAi(false);
-                    this.getNavigation().stop(); // 确保恢复时也是静止的
-                    this.setDeltaMovement(Vec3.ZERO);
+                    // simukraft: 不再强制停止移动，避免与击退效果冲突导致一停一顿
+                    // this.getNavigation().stop();
+                    // this.setDeltaMovement(Vec3.ZERO);
                 }
             }
 
@@ -1515,6 +1513,10 @@ public class CustomEntity extends Animal {
 
         @Override
         public void tick() {
+            // simukraft: 睡觉时不能移动，防止"躺着跑"
+            if (npc.isSleeping()) {
+                return;
+            }
             if (!npc.isWorking) {
                 super.tick();
             }

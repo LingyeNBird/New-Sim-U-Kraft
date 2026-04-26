@@ -120,7 +120,66 @@ public class ControlBoxDataManager {
             return buildingFileName;
         }
     }
-    
+
+    /**
+     * 从建筑的sk文件中读取建筑尺寸
+     * @param buildingFileName 建筑文件名
+     * @param category 建筑类别
+     * @return 建筑尺寸字符串（如 "10x10x10"），读取失败返回null
+     */
+    public static String getBuildingSizeFromSkFile(String buildingFileName, String category) {
+        if (buildingFileName == null || buildingFileName.isEmpty()) {
+            return null;
+        }
+
+        // 首先尝试从 simukraftbuilding 文件夹读取（用户导入的文件）
+        try {
+            String userFilePath = String.format("simukraftbuilding/%s/%s.sk", category, buildingFileName.toLowerCase());
+            File userFile = new File(userFilePath);
+
+            if (userFile.exists()) {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(userFile), Charset.forName("UTF-8")))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        line = line.trim();
+                        if (line.startsWith("size:")) {
+                            String size = line.substring(5).trim();
+                            LOGGER.debug("[ControlBoxDataManager] 从用户sk文件读取建筑尺寸: {} -> {}", buildingFileName, size);
+                            return size;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.debug("[ControlBoxDataManager] 从用户sk文件读取建筑尺寸失败: {}, {}", buildingFileName, e.getMessage());
+        }
+
+        // 如果用户文件不存在或读取失败，尝试从 JAR 资源读取
+        try {
+            String resourcePath = String.format("assets/simukraft/building/%s/%s.sk", category, buildingFileName.toLowerCase());
+            InputStream is = ControlBoxDataManager.class.getClassLoader().getResourceAsStream(resourcePath);
+            if (is == null) {
+                return null;
+            }
+
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    line = line.trim();
+                    if (line.startsWith("size:")) {
+                        String size = line.substring(5).trim();
+                        LOGGER.debug("[ControlBoxDataManager] 从资源sk文件读取建筑尺寸: {} -> {}", buildingFileName, size);
+                        return size;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.debug("[ControlBoxDataManager] 从资源sk文件读取建筑尺寸失败: {}, {}", buildingFileName, e.getMessage());
+        }
+
+        return null;
+    }
+
     /**
      * 从建筑的sk文件中读取租金/价格
      * @param buildingFileName 建筑文件名

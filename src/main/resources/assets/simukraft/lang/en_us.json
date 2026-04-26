@@ -431,6 +431,7 @@
   "message.simukraft.current_mode": "Current SimuKraft Game Mode: %s",
   "message.simukraft.npc_not_teleported": "If the NPC didn't teleport after hiring, please hire again!",
   "message.simukraft.npc_woken_up": "§eYou woke up %s",
+  "message.simukraft.npc_sleeping_right_click_bed": "§e%s is sleeping, right-click the bed to wake them up",
   "simukraft.subtitle.male_hello": "A male greets you",
   "simukraft.subtitle.female_hello": "A female greets you",
   "simukraft.subtitle.male_hurt": "Male hurt",

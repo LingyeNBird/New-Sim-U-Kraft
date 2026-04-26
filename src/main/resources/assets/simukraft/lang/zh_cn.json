@@ -435,6 +435,7 @@
   "message.simukraft.current_mode": "当前模拟城市游戏模式：%s",
   "message.simukraft.npc_not_teleported": "如果雇佣完NPC没有传送过来，请重新雇佣！",
   "message.simukraft.npc_woken_up": "§e你唤醒了 %s",
+  "message.simukraft.npc_sleeping_right_click_bed": "§e%s 正在睡觉，右键床可以唤醒他们",
   "simukraft.subtitle.male_hello": "一位男生向你打招呼",
   "simukraft.subtitle.female_hello": "一位女生向你打招呼",
   "simukraft.subtitle.male_hurt": "男生受伤",

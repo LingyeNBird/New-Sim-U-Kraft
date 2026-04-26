@@ -526,7 +526,7 @@ public class ResidentManager {
             // 鍐欏洖鏂囦欢
             Files.write(skFile, newLines, StandardCharsets.UTF_8);
 
-            LOGGER.info("[ResidentManager] 宸插啓鍏ヤ綇瀹呭垎閰? {} -> {}", skFile, npcInfo.name);
+            //LOGGER.info("[ResidentManager] 宸插啓鍏ヤ綇瀹呭垎閰? {} -> {}", skFile, npcInfo.name);
 
             // 鍙戦€佹彁绀烘秷鎭紙浠呭競闀垮彲瑙侊級
             sendResidenceAssignmentMessage(server, cityId, npcInfo.name, position, ".");

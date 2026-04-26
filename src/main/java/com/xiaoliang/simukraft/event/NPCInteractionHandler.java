@@ -18,6 +18,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
@@ -39,12 +41,92 @@ public class NPCInteractionHandler {
         if (!(event.getLevel() instanceof ServerLevel serverLevel)) {
             return;
         }
-        if (!ContainerUtils.isContainer(serverLevel, event.getPos())) {
+
+        BlockPos clickedPos = event.getPos();
+        BlockState blockState = serverLevel.getBlockState(clickedPos);
+
+        // simukraft: 右键床唤醒睡在上面的NPC
+        if (blockState.getBlock() instanceof BedBlock && event.getSide().isServer()) {
+            if (tryWakeUpNPCOnBed(serverLevel, clickedPos, event.getEntity())) {
+                event.setCanceled(true);
+                return;
+            }
+        }
+
+        if (!ContainerUtils.isContainer(serverLevel, clickedPos)) {
             return;
         }
 
         // 玩家开箱后延迟 1 秒再刷新，给拖拽物品/物流写入留出时间。
-        ServerTickHandler.scheduleBuilderContainerRefresh(serverLevel, event.getPos(), 20);
+        ServerTickHandler.scheduleBuilderContainerRefresh(serverLevel, clickedPos, 20);
+    }
+
+    /**
+     * 尝试唤醒睡在床上的NPC（menglannnn: 玩家右键床唤醒）
+     * @param level 服务器世界
+     * @param bedPos 床的位置
+     * @param player 玩家
+     * @return 是否成功唤醒
+     */
+    private static boolean tryWakeUpNPCOnBed(ServerLevel level, BlockPos bedPos, Player player) {
+        // 查找睡在该床上的NPC
+        CustomEntity sleepingNpc = findNPCsleepingOnBed(level, bedPos);
+        if (sleepingNpc == null) {
+            return false;
+        }
+
+        // 唤醒NPC
+        wakeUpNPC(sleepingNpc, player);
+        return true;
+    }
+
+    /**
+     * 查找睡在指定床上的NPC（menglannnn: 原版风格，检查床的两个部分）
+     * @param level 服务器世界
+     * @param bedPos 床的位置（可以是床头或床尾）
+     * @return 睡在该床上的NPC，如果没有返回null
+     */
+    private static CustomEntity findNPCsleepingOnBed(ServerLevel level, BlockPos bedPos) {
+        BlockState bedState = level.getBlockState(bedPos);
+        if (!(bedState.getBlock() instanceof BedBlock)) {
+            return null;
+        }
+
+        // 获取床头和床尾位置（原版风格：床由两部分组成）
+        BlockPos headPos = bedPos;
+        BlockPos footPos = bedPos;
+
+        if (bedState.hasProperty(BedBlock.FACING)) {
+            net.minecraft.core.Direction facing = bedState.getValue(BedBlock.FACING);
+            // 检查当前是床头还是床尾
+            if (bedState.hasProperty(BedBlock.PART)) {
+                net.minecraft.world.level.block.state.properties.BedPart part = bedState.getValue(BedBlock.PART);
+                if (part == net.minecraft.world.level.block.state.properties.BedPart.FOOT) {
+                    // 当前是床尾，床头在朝向方向
+                    headPos = bedPos.relative(facing);
+                } else {
+                    // 当前是床头，床尾在反方向
+                    footPos = bedPos.relative(facing.getOpposite());
+                }
+            }
+        }
+
+        // 检查床头和床尾周围是否有睡觉的NPC
+        BlockPos[] checkPositions = {headPos, footPos};
+        for (BlockPos checkPos : checkPositions) {
+            for (CustomEntity npc : level.getEntitiesOfClass(CustomEntity.class,
+                    new net.minecraft.world.phys.AABB(checkPos).inflate(1.5D))) {
+                if (npc.isSleeping() &&
+                    npc.getSleepingPos().isPresent()) {
+                    BlockPos npcBedPos = npc.getSleepingPos().get();
+                    // NPC睡在床头或床尾都算作睡在这张床上
+                    if (npcBedPos.equals(headPos) || npcBedPos.equals(footPos)) {
+                        return npc;
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     @SubscribeEvent
@@ -52,9 +134,10 @@ public class NPCInteractionHandler {
         if (event.getTarget() instanceof CustomEntity npc && event.getHand() == InteractionHand.MAIN_HAND) {
             Player player = event.getEntity();
 
-            // simukraft: 如果NPC正在睡觉，右键唤醒NPC
+            // simukraft: NPC正在睡觉时，右键不打开界面，提示玩家右键床唤醒
             if (npc.isSleeping() && event.getSide().isServer()) {
-                wakeUpNPC(npc, player);
+                player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                    "message.simukraft.npc_sleeping_right_click_bed", npc.getFullName()));
                 event.setCanceled(true);
                 return;
             }

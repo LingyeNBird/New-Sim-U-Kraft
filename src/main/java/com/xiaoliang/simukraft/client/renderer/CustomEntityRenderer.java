@@ -128,6 +128,11 @@ public class CustomEntityRenderer extends MobRenderer<CustomEntity, CustomEntity
             return Component.literal("下班在家");
         }
 
+        // simukraft: 午休状态显示"午休中"
+        if (subState == com.xiaoliang.simukraft.entity.WorkSubState.LUNCH_BREAK) {
+            return Component.literal("午休中");
+        }
+
         // 根据主状态显示
         if (status == com.xiaoliang.simukraft.entity.WorkStatus.WORKING) {
             return Component.literal("工作中");

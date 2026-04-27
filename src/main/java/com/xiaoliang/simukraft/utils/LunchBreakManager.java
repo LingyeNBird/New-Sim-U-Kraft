@@ -122,18 +122,10 @@ public class LunchBreakManager {
 
     /**
      * 检查是否是商业职业
+     * simukraft: 从配置文件读取，而不是硬编码
      */
     private static boolean isCommercialJob(String job) {
-        // 商业职业通常是商店类型
-        return job != null && (
-            job.contains("shop") ||
-            job.contains("store") ||
-            job.contains("bakery") ||
-            job.contains("butcher") ||
-            job.equals("meat_shop") ||
-            job.equals("fruit_shop") ||
-            job.equals("bakery")
-        );
+        return CommercialBuildingManager.isCommercialJobType(job);
     }
 
     /**

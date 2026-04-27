@@ -196,6 +196,11 @@ public class FarmerDailyWorkHandler {
     public static void restoreFarmerWorkState(CustomEntity npc, BlockPos farmlandBoxPos, ServerLevel level) {
         if (npc == null || farmlandBoxPos == null || level == null) return;
 
+        // simukraft: 午休期间不恢复农民工作状态，也不传送
+        if (npc.getWorkSubState() == com.xiaoliang.simukraft.entity.WorkSubState.LUNCH_BREAK) {
+            return;
+        }
+
         // 检查NPC当前状态，如果是空闲，强制恢复为工作中
         if (npc.getWorkStatus() == WorkStatus.IDLE) {
             npc.setWorkStatus(WorkStatus.WORKING);

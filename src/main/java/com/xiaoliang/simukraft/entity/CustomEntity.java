@@ -730,7 +730,9 @@ public class CustomEntity extends Animal {
                 if (current == null) current = "";
                 boolean canOverride = canUseDynamicStatusLabel(current);
 
-                if (canOverride && getWorkSubState() != WorkSubState.RESTING) {
+                // simukraft: 休息和午休状态下不更新动态标签
+                if (canOverride && getWorkSubState() != WorkSubState.RESTING
+                        && getWorkSubState() != WorkSubState.LUNCH_BREAK) {
                     String desired = resolveDynamicStatusLabel(hasActiveWork);
                     if (!desired.equals(current)) {
                         setStatusLabel(desired.isEmpty() ? null : desired);
@@ -1650,8 +1652,8 @@ public class CustomEntity extends Animal {
             return Component.translatable("gui.npc.status.lunch_break");
         }
 
-        // 工作中状态优先显示，不受饥饿状态标签影响
-        if (currentWorkStatus == WorkStatus.WORKING) {
+        // 工作中状态优先显示，不受饥饿状态标签影响（但午休状态除外）
+        if (currentWorkStatus == WorkStatus.WORKING && currentSubState != WorkSubState.LUNCH_BREAK) {
             return Component.translatable("work_status.working");
         }
 

@@ -67,6 +67,10 @@ public final class NPCWorkResumeCoordinator {
         if (NPCRestHandler.isNpcInRestWorkflow(npc.getUUID())) {
             return false;
         }
+        // simukraft: 午休期间不恢复工作状态，也不传送
+        if (npc.getWorkSubState() == WorkSubState.LUNCH_BREAK) {
+            return false;
+        }
 
         if (fallbackJob != null && !fallbackJob.isBlank() && !fallbackJob.equals(npc.getJob())) {
             npc.setJob(fallbackJob);

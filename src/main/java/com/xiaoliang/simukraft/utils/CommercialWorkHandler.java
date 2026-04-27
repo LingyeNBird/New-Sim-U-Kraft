@@ -441,6 +441,11 @@ public class CommercialWorkHandler {
             return;
         }
 
+        // simukraft: 午休期间不传送NPC到工作位置
+        if (npc.getWorkSubState() == com.xiaoliang.simukraft.entity.WorkSubState.LUNCH_BREAK) {
+            return;
+        }
+
         markShiftStarted(buildingPos, dayIndex);
 
         // 下班逻辑会把商业NPC切回 IDLE，这里统一通过协调器恢复为工作中，

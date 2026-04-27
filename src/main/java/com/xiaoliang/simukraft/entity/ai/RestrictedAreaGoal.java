@@ -132,12 +132,20 @@ public class RestrictedAreaGoal extends Goal {
 
     @Override
     public boolean canUse() {
+        // simukraft: 睡觉时禁用此Goal，防止"躺着跑"
+        if (npc.isSleeping()) {
+            return false;
+        }
         // simukraft: 只要启用了限制就持续检查（预防性阻止）
         return enabled;
     }
 
     @Override
     public boolean canContinueToUse() {
+        // simukraft: 睡觉时禁用此Goal，防止"躺着跑"
+        if (npc.isSleeping()) {
+            return false;
+        }
         // simukraft: 只要启用了限制就持续检查
         return enabled;
     }

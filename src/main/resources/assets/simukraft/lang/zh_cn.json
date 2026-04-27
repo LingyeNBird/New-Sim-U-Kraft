@@ -381,6 +381,7 @@
   "command.npcxp.set": "已将 %s 的经验值设置为 %d",
   "command.npcxp.query": "%s - 等级: %d, 经验值: %d",
   "message.simukraft.npc.level_up.block_placed": "%s 放置方块时升级到等级 %d！",
+  "message.simukraft.npc.attacked": "§c[警告] %s 受到 %s 的攻击！位置：(%d, %d, %d)",
 
   "building.unknown.name": "未知建筑",
   "building.unknown.size": "未知尺寸",

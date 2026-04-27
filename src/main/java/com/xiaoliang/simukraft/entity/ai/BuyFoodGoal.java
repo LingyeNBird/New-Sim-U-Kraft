@@ -33,6 +33,7 @@ public class BuyFoodGoal extends Goal {
         if (npc.tickCount < nextStartTick) return false;
         if (npc.getWorkStatus() == WorkStatus.WORKING) return false;
         if (npc.getWorkSubState() == WorkSubState.RESTING) return false;
+        if (npc.isSleeping()) return false; // simukraft: 睡觉时不能去买食物
         if (npc.getHunger() > START_THRESHOLD) return false;
         if (!(npc.level() instanceof ServerLevel level)) return false;
 
@@ -60,6 +61,7 @@ public class BuyFoodGoal extends Goal {
         if (targetPos == null || plan == null) return false;
         if (npc.getHunger() >= STOP_THRESHOLD) return false;
         if (npc.getWorkStatus() == WorkStatus.WORKING) return false;
+        if (npc.isSleeping()) return false; // simukraft: 睡觉时停止购买
         return !npc.getNavigation().isDone();
     }
 

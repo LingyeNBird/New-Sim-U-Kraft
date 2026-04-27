@@ -55,6 +55,10 @@ public class RestrictedRandomStrollGoal extends RandomStrollGoal {
 
     @Override
     public boolean canUse() {
+        // simukraft: 睡觉时禁用此Goal，防止"躺着跑"
+        if (npc.isSleeping()) {
+            return false;
+        }
         // simukraft: 如果启用了限制且有有效的建筑ID，检查是否能找到边界内的目标
         if (restrictionEnabled && restrictedBuildingId != null) {
             Vec3 target = getPosition();

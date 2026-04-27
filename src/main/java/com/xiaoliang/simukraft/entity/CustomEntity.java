@@ -25,6 +25,7 @@ import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Mth;
@@ -257,6 +258,62 @@ public class CustomEntity extends Animal {
         if (currentTime - lastHurtSoundTime > 500) {
             this.playHurtSound(damageSource);
             lastHurtSoundTime = currentTime;
+        }
+
+        // simukraft: NPC受到攻击后获得发光效果并通知市长和官员
+        handleNPCAttacked(damageSource);
+    }
+
+    /**
+     * 处理NPC被攻击事件
+     * menglannnn: 给予发光效果并通知市长和官员
+     */
+    private void handleNPCAttacked(DamageSource damageSource) {
+        if (this.level().isClientSide) return;
+
+        // 给予发光效果（10秒）
+        this.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+            net.minecraft.world.effect.MobEffects.GLOWING, 200, 0));
+
+        // 获取攻击者信息
+        Entity attacker = damageSource.getEntity();
+        String attackerName = attacker instanceof Player player
+            ? player.getName().getString()
+            : (attacker != null ? attacker.getName().getString() : "未知");
+
+        // 获取城市信息
+        UUID cityId = this.getCityId();
+        if (cityId == null) return;
+
+        MinecraftServer server = this.level().getServer();
+        if (server == null) return;
+
+        CityData cityData = CityData.get((ServerLevel) this.level());
+        CityData.CityInfo cityInfo = cityData.getCity(cityId);
+        if (cityInfo == null) return;
+
+        // 发送消息给市长和官员
+        Component message = Component.translatable("message.simukraft.npc.attacked",
+            this.getFullName(), attackerName,
+            (int) this.getX(), (int) this.getY(), (int) this.getZ());
+
+        // 发送给市长
+        sendMessageToMayor(server, message);
+
+        // 发送给官员
+        sendMessageToOfficials(server, cityInfo, message);
+    }
+
+    /**
+     * 发送消息给官员
+     * menglannnn: 遍历城市官员列表发送消息
+     */
+    private void sendMessageToOfficials(MinecraftServer server, CityData.CityInfo cityInfo, Component message) {
+        for (String officialName : cityInfo.getOfficials()) {
+            ServerPlayer officialPlayer = server.getPlayerList().getPlayerByName(officialName);
+            if (officialPlayer != null) {
+                officialPlayer.sendSystemMessage(message);
+            }
         }
     }
 

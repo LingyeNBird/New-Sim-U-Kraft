@@ -1,5 +1,6 @@
 package com.xiaoliang.simukraft.utils;
 
+import com.xiaoliang.simukraft.config.ServerConfig;
 import com.xiaoliang.simukraft.building.CommercialBuildingConfig;
 import com.xiaoliang.simukraft.building.CommercialBuildingManager;
 import com.xiaoliang.simukraft.entity.CustomEntity;
@@ -45,6 +46,8 @@ public class CommercialWorkHandler {
     private static final Map<BlockPos, Long> lastShiftEndDay = new ConcurrentHashMap<>();
     // 记录当天是否已满足开售原料前置条件
     private static final Map<BlockPos, Long> preparedMaterialsDay = new ConcurrentHashMap<>();
+    private static final Map<UUID, Long> recentlyRestoredCommercialNpcs = new ConcurrentHashMap<>();
+    private static final long RESTORE_SHIFT_END_PROTECTION_TICKS = 100L;
     private static final Map<Path, String> BUILDING_FILE_NAME_CACHE = new ConcurrentHashMap<>();
     private static boolean dataInitialized = false;
 
@@ -54,8 +57,6 @@ public class CommercialWorkHandler {
     
     // 记录上次游戏时间，用于检测时间跳跃（如/time set指令）
     private static long lastGameTime = -1;
-    private static final double WORKPLACE_TELEPORT_DISTANCE = 64.0;
-
     /**
      * 服务器启动时的初始化方法
      */
@@ -68,6 +69,7 @@ public class CommercialWorkHandler {
         lastShiftStartDay.clear();
         lastShiftEndDay.clear();
         preparedMaterialsDay.clear();
+        recentlyRestoredCommercialNpcs.clear();
         BUILDING_FILE_NAME_CACHE.clear();
 
         // 初始化商业建筑配置管理器
@@ -465,6 +467,19 @@ public class CommercialWorkHandler {
             return;
         }
 
+        Long restoredAt = recentlyRestoredCommercialNpcs.get(npc.getUUID());
+        if (restoredAt != null) {
+            long elapsed = level.getGameTime() - restoredAt;
+            if (elapsed >= 0 && elapsed < RESTORE_SHIFT_END_PROTECTION_TICKS) {
+                if (ServerConfig.isDebugLogEnabled()) {
+                    LOGGER.info("[CommercialWorkHandler] NPC {} 刚从休息恢复，暂时跳过下班回家，当前位置: {}，工作点: {}，剩余保护: {}tick",
+                            npc.getFullName(), npc.blockPosition(), buildingPos, RESTORE_SHIFT_END_PROTECTION_TICKS - elapsed);
+                }
+                return;
+            }
+            recentlyRestoredCommercialNpcs.remove(npc.getUUID());
+        }
+
         long dayIndex = gameTime / 24000L;
         Long handledDay = lastShiftEndDay.get(buildingPos);
         if (handledDay != null && handledDay == dayIndex) {
@@ -529,19 +544,25 @@ public class CommercialWorkHandler {
         preparedMaterialsDay.put(buildingPos, dayIndex);
     }
 
+    /**
+     * 移动NPC到工作位置
+     * menglannnn: 完全使用新的自定义寻路系统，不再使用原版寻路
+     */
     private static void moveNpcToWorkplace(CustomEntity npc, BlockPos workPos) {
         double targetX = workPos.getX() + 0.5;
         double targetY = workPos.getY() + 1.0;
         double targetZ = workPos.getZ() + 0.5;
 
-        double distanceSqr = npc.distanceToSqr(targetX, targetY, targetZ);
-        if (distanceSqr > WORKPLACE_TELEPORT_DISTANCE * WORKPLACE_TELEPORT_DISTANCE) {
-            npc.teleportTo(targetX, targetY, targetZ);
-            npc.getNavigation().stop();
+        if (npc.moveToWithNewPathfinder(targetX, targetY, targetZ, 1.0D)) {
+            if (ServerConfig.isDebugLogEnabled()) {
+                LOGGER.info("[CommercialWorkHandler] NPC {} 开始前往商业工作点，当前位置: {}，目标位置: {}，目的: 商业上班", npc.getFullName(), npc.blockPosition(), workPos);
+            }
             return;
         }
 
-        npc.getNavigation().moveTo(targetX, targetY, targetZ, 1.0D);
+        LOGGER.warn("[CommercialWorkHandler] NPC {} 前往商业工作点寻路失败，当前位置: {}，目标位置: {}，目的: 商业上班，改为直接传送", npc.getFullName(), npc.blockPosition(), workPos);
+        npc.teleportTo(targetX, targetY, targetZ);
+        npc.stopNewPathfinder();
     }
 
     /**
@@ -1000,6 +1021,11 @@ public class CommercialWorkHandler {
 
         long dayIndex = level.getDayTime() / 24000L;
         applyCommercialWorksiteState(npc, level, pos, config);
+        recentlyRestoredCommercialNpcs.put(npc.getUUID(), level.getGameTime());
+        if (ServerConfig.isDebugLogEnabled()) {
+            LOGGER.info("[CommercialWorkHandler] NPC {} 从休息恢复到商业工作，当前位置: {}，工作点: {}，职业: {}，已添加下班保护 {}tick",
+                    npc.getFullName(), npc.blockPosition(), pos, npc.getJob(), RESTORE_SHIFT_END_PROTECTION_TICKS);
+        }
         markShiftStarted(pos, dayIndex);
         prepareMaterialsForToday(pos, level, config, dayIndex);
     }

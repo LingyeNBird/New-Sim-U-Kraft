@@ -1,0 +1,109 @@
+package com.xiaoliang.simukraft.entity.ai.path;
+
+import net.minecraft.core.BlockPos;
+
+/**
+ * 路径节点（menglannnn: A*寻路的基本单元）
+ */
+public class NPCPathNode implements Comparable<NPCPathNode> {
+    public final BlockPos pos;
+    public final int x, y, z;
+    
+    // A*算法所需的数据
+    public double gCost; // 从起点到当前节点的实际代价
+    public double hCost; // 从当前节点到终点的估计代价（启发式）
+    public double fCost; // 总代价 = gCost + hCost
+    
+    public NPCPathNode parent; // 父节点，用于回溯路径
+    
+    // 节点类型
+    public NodeType type;
+    
+    public enum NodeType {
+        WALKABLE,      // 可行走
+        STEP_UP,       // 一格抬脚翻越
+        JUMP,          // 需要跳跃
+        FALL,          // 需要下落
+        CLIMB,         // 需要攀爬（梯子/藤蔓）
+        DOOR,          // 门
+        WATER,         // 水中
+        AIR            // 空中（需要特殊处理）
+    }
+    
+    public NPCPathNode(BlockPos pos) {
+        this.pos = pos;
+        this.x = pos.getX();
+        this.y = pos.getY();
+        this.z = pos.getZ();
+        this.gCost = Double.MAX_VALUE;
+        this.hCost = 0;
+        this.fCost = Double.MAX_VALUE;
+        this.parent = null;
+        this.type = NodeType.WALKABLE;
+    }
+    
+    public NPCPathNode(int x, int y, int z) {
+        this.pos = new BlockPos(x, y, z);
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        this.gCost = Double.MAX_VALUE;
+        this.hCost = 0;
+        this.fCost = Double.MAX_VALUE;
+        this.parent = null;
+        this.type = NodeType.WALKABLE;
+    }
+    
+    @Override
+    public int compareTo(NPCPathNode other) {
+        return Double.compare(this.fCost, other.fCost);
+    }
+    
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (!(obj instanceof NPCPathNode)) return false;
+        NPCPathNode other = (NPCPathNode) obj;
+        return this.x == other.x && this.y == other.y && this.z == other.z;
+    }
+    
+    @Override
+    public int hashCode() {
+        return pos.hashCode();
+    }
+    
+    @Override
+    public String toString() {
+        return String.format("Node[%d,%d,%d] g=%.2f h=%.2f f=%.2f %s", 
+            x, y, z, gCost, hCost, fCost, type);
+    }
+    
+    /**
+     * 计算到另一个节点的欧几里得距离
+     */
+    public double distanceTo(NPCPathNode other) {
+        double dx = this.x - other.x;
+        double dy = this.y - other.y;
+        double dz = this.z - other.z;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+    
+    /**
+     * 计算到目标位置的曼哈顿距离（用于启发式）
+     */
+    public double manhattanDistanceTo(BlockPos target) {
+        return Math.abs(this.x - target.getX()) + 
+               Math.abs(this.y - target.getY()) + 
+               Math.abs(this.z - target.getZ());
+    }
+    
+    /**
+     * 计算到目标位置的欧几里得距离（用于启发式）
+     */
+    public double distanceTo(BlockPos target) {
+        double dx = this.x - target.getX();
+        double dy = this.y - target.getY();
+        double dz = this.z - target.getZ();
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+}

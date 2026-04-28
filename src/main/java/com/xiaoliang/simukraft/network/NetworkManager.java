@@ -41,6 +41,12 @@ public class NetworkManager {
                 SyncPopulationPacket::encode,
                 SyncPopulationPacket::new,
                 SyncPopulationPacket::handle);
+
+        INSTANCE.registerMessage(id++,
+                SyncNPCPathDebugPacket.class,
+                SyncNPCPathDebugPacket::encode,
+                SyncNPCPathDebugPacket::new,
+                SyncNPCPathDebugPacket::handle);
                 
         INSTANCE.registerMessage(id++, SyncHUDDataPacket.class,
                 SyncHUDDataPacket::encode,

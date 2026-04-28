@@ -1,5 +1,6 @@
 package com.xiaoliang.simukraft.utils;
 
+import com.xiaoliang.simukraft.config.ServerConfig;
 import com.xiaoliang.simukraft.client.preview.SchematicNBTLoader;
 import com.xiaoliang.simukraft.entity.CustomEntity;
 import com.xiaoliang.simukraft.entity.WorkStatus;
@@ -72,6 +73,7 @@ public class NPCRestHandler {
     private static final int REST_STAGE_AT_HOME = 2;
     private static final int REST_STAGE_SLEEPING = 3;
     private static final int REST_STAGE_WAKING_UP = 4;
+    private static final int REST_STAGE_WAITING_FOR_BED = 6;
     @SuppressWarnings("unused")
     private static final int REST_STAGE_GOING_TO_WORK = 5; // 新增：正在去工作
 
@@ -167,6 +169,11 @@ public class NPCRestHandler {
     public static boolean shouldStartResting(ServerLevel level, CustomEntity npc) {
         if (npc == null) {
             return shouldStartResting(level);
+        }
+
+        // 无房NPC不进入住宅休息工作流，避免夜间持续重复尝试回家
+        if (getNPCHomePosition(npc, level.getServer()) == null) {
+            return false;
         }
 
         // simukraft: 检查NPC是否刚刚被玩家唤醒（冷却期内不重新开始休息）
@@ -405,17 +412,23 @@ public class NPCRestHandler {
 
         UUID npcUuid = npc.getUUID();
 
-        // 检查NPC是否已经在休息
-        if (restingNPCs.containsKey(npcUuid)) {
+        // 已经在休息工作流中时，不允许重复进入回家流程
+        if (restingNPCs.containsKey(npcUuid) || goingToWorkNPCs.containsKey(npcUuid)) {
+            return;
+        }
+
+        // 已经处于工作中且不在夜间回家窗口时，不允许错误地重新拉回家
+        if (npc.getWorkStatus() == WorkStatus.WORKING && !shouldStartResting(level)) {
             return;
         }
 
         // 获取NPC的住宅位置
         BlockPos homePos = getNPCHomePosition(npc, level.getServer());
         if (homePos == null) {
-            // 如果NPC没有住宅，使用NPC当前位置作为休息位置（原地休息）
-            homePos = npc.blockPosition();
-            //LOGGER.info("[NPCRestHandler] NPC {} 没有住宅，将在当前位置休息: {}", npc.getFullName(), homePos);
+            if (ServerConfig.isDebugLogEnabled()) {
+                LOGGER.info("[NPCRestHandler] NPC {} 没有住宅，跳过回家休息流程，避免误将当前位置或他人住宅当作家", npc.getFullName());
+            }
+            return;
         } else {
             //LOGGER.info("[NPCRestHandler] NPC {} 找到住宅位置: {}", npc.getFullName(), homePos);
         }
@@ -558,7 +571,7 @@ public class NPCRestHandler {
                     LOGGER.info("[NPCRestHandler] NPC {} 距离工作岗位{}格，开始寻路去工作: {}",
                         npc.getFullName(), distance, workPos);
 
-                    // simukraft: 首先设置状态标签，让RestrictedAreaGoal知道NPC要去工作了
+                    // simukraft: 首先设置状态标签，让NPCBoundaryManager知道NPC要去工作了
                     npc.setStatusLabel("gui.npc.status.going_to_work");
 
                     // 清理休息数据（但保留工作状态相关数据，等到达后再清理）
@@ -566,9 +579,9 @@ public class NPCRestHandler {
                     clearRestWorkflowData(npcUuid, false);
 
                     // simukraft: 清除休息界限
-                    com.xiaoliang.simukraft.entity.ai.RestrictedAreaGoal areaGoal = npc.getRestrictedAreaGoal();
-                    if (areaGoal != null) {
-                        areaGoal.clearRestrictedArea();
+                    com.xiaoliang.simukraft.entity.ai.NPCBoundaryManager boundaryManager = npc.getBoundaryManager();
+                    if (boundaryManager != null) {
+                        boundaryManager.clearRestrictedArea();
                     }
 
                     // 设置子状态为正在去工作
@@ -620,21 +633,10 @@ public class NPCRestHandler {
             npc.setStatusLabel(null);
         }
 
-        // simukraft: 清除寻路层面的边界限制（menglannnn: 休息结束，恢复正常移动）
-        if (npc.getNavigation() instanceof com.xiaoliang.simukraft.entity.ai.RestrictedGroundPathNavigation nav) {
-            nav.disableRestriction();
-        }
-
-        // simukraft: 清除随机漫步的边界限制
-        com.xiaoliang.simukraft.entity.ai.RestrictedRandomStrollGoal strollGoal = npc.getRestrictedRandomStrollGoal();
-        if (strollGoal != null) {
-            strollGoal.disableRestriction();
-        }
-
-        // simukraft: 同时清除AI层面的边界限制
-        com.xiaoliang.simukraft.entity.ai.RestrictedAreaGoal areaGoal = npc.getRestrictedAreaGoal();
-        if (areaGoal != null) {
-            areaGoal.clearRestrictedArea();
+        // simukraft: 清除所有边界限制（menglannnn: 休息结束，恢复正常移动）
+        com.xiaoliang.simukraft.entity.ai.NPCBoundaryManager boundaryManager = npc.getBoundaryManager();
+        if (boundaryManager != null) {
+            boundaryManager.clearRestrictedArea();
         }
 
         // 发送起床提示消息
@@ -1112,6 +1114,9 @@ public class NPCRestHandler {
             case REST_STAGE_SLEEPING:
                 updateSleepingStatus(npc, restData, level);
                 break;
+            case REST_STAGE_WAITING_FOR_BED:
+                updateWaitingForBedStatus(npc, restData, level);
+                break;
             case REST_STAGE_WAKING_UP:
                 // 起床
                 break;
@@ -1214,8 +1219,7 @@ public class NPCRestHandler {
         restData.hasArrivedHome = true;
         restData.restStage = REST_STAGE_AT_HOME;
         npcPathfindingStatus.put(npc.getUUID(), false);
-        // simukraft: 清除寻路目标，防止NPC继续移动
-        npc.getNavigation().stop();
+        npc.stopAllMovement();
         npc.setStatusLabel("gui.npc.status.at_home");
     }
 
@@ -1260,6 +1264,18 @@ public class NPCRestHandler {
         }
     }
 
+    // simukraft: 界限解锁时间，23900 tick（约早上5:58），让NPC可以提前出发去工作
+    private static final long BOUNDS_UNLOCK_TIME = 23900L;
+
+    /**
+     * 检查是否应该解锁界限（menglannnn: 23900 tick后允许NPC离开家去工作）
+     */
+    private static boolean shouldUnlockBounds(ServerLevel level) {
+        long dayTime = level.getDayTime() % 24000L;
+        // 23900 tick后解锁，允许NPC前往工作岗位
+        return dayTime >= BOUNDS_UNLOCK_TIME || dayTime < 1000L;
+    }
+
     /**
      * 更新在家状态（限制在封闭空间内活动）
      */
@@ -1271,21 +1287,13 @@ public class NPCRestHandler {
         // simukraft: 获取住宅边界，限制NPC移动范围
         BuildingBounds bounds = getResidenceBuildingBounds(level, restData.homePos, npc);
 
-        // simukraft: 启用寻路层面的边界限制（menglannnn: 在寻路时就阻止走向边界外）
-        if (npc.getNavigation() instanceof com.xiaoliang.simukraft.entity.ai.RestrictedGroundPathNavigation nav) {
-            nav.enableRestriction(restData.homePos);
-        }
-
-        // simukraft: 启用随机漫步的边界限制（menglannnn: 防止随机漫步Goal选择边界外的目标）
-        com.xiaoliang.simukraft.entity.ai.RestrictedRandomStrollGoal strollGoal = npc.getRestrictedRandomStrollGoal();
-        if (strollGoal != null) {
-            strollGoal.enableRestriction(restData.homePos);
-        }
-
-        // simukraft: 同时启用AI层面的边界限制作为后备（menglannnn: 传入控制盒位置用于查找建筑ID）
-        com.xiaoliang.simukraft.entity.ai.RestrictedAreaGoal areaGoal = npc.getRestrictedAreaGoal();
-        if (areaGoal != null && bounds != null) {
-            areaGoal.setRestrictedArea(bounds.center, bounds.rangeX, bounds.rangeZ, restData.homePos);
+        // simukraft: 23900 tick后解锁界限，不再重新启用限制
+        if (!shouldUnlockBounds(level)) {
+            // simukraft: 启用边界限制（menglannnn: 使用NPCBoundaryManager统一管理）
+            com.xiaoliang.simukraft.entity.ai.NPCBoundaryManager boundaryManager = npc.getBoundaryManager();
+            if (boundaryManager != null && bounds != null) {
+                boundaryManager.setRestrictedArea(bounds.center, bounds.rangeX, bounds.rangeZ, restData.homePos);
+            }
         }
 
         if (!isBedStillValid(level, restData.bedPos)) {
@@ -1306,7 +1314,10 @@ public class NPCRestHandler {
         npc.setNoAi(false);
         npc.setWorking(false);
 
-        // 检查是否刚刚被唤醒（冷却期内不重新睡觉）
+        long dayTime = level.getDayTime() % 24000L;
+        boolean shouldBeSleepingTime = dayTime >= 12542L && dayTime < BOUNDS_UNLOCK_TIME;
+
+        // 夜晚在家但未上床时，直接冻结移动，防止原版Goal和残留导航继续乱跑
         long timeSinceWakeUp = gameTime - restData.lastWakeUpTime;
         // simukraft: 随机冷却时间30秒~1分钟（600~1200 tick）
         long sleepCooldown = 600L + (long) (Math.random() * 600L);
@@ -1322,13 +1333,26 @@ public class NPCRestHandler {
             }
         }
 
+        // simukraft: 夜晚未真正躺床时，不允许使用自定义寻路闲逛，避免在住宅内乱跑
+        if (shouldBeSleepingTime && (!canSleep || restData.bedPos != null)) {
+            restData.restStage = REST_STAGE_WAITING_FOR_BED;
+            updateWaitingForBedStatus(npc, restData, level);
+            return;
+        }
+
         // NPC自由移动：随机选择目标点（床或闲逛位置）
-        // simukraft: 使用RestrictedAreaGoal自动处理边界限制，这里只需要选择目标
+        // simukraft: 使用NPCBoundaryManager自动处理边界限制，这里只需要选择目标
         if (npc.getNavigation().isDone()) {
             BlockPos targetPos = chooseRestTarget(npc, restData, bounds, level);
             if (targetPos != null) {
-                // simukraft: 正常寻路，RestrictedAreaGoal会在NPC接近边界时自动阻止
-                npc.getNavigation().moveTo(targetPos.getX() + 0.5, targetPos.getY(), targetPos.getZ() + 0.5, 0.8D);
+                if (ServerConfig.isDebugLogEnabled()) {
+                    LOGGER.info("[NPCRestHandler] NPC {} 开始休息闲逛，当前位置: {}，目标位置: {}，目的: 休息闲逛", npc.getFullName(), npc.blockPosition(), targetPos);
+                }
+                if (!npc.moveToWithNewPathfinder(targetPos, 0.8D)) {
+                    LOGGER.warn("[NPCRestHandler] NPC {} 休息闲逛寻路失败，当前位置: {}，目标位置: {}，目的: 休息闲逛，改为直接传送", npc.getFullName(), npc.blockPosition(), targetPos);
+                    npc.teleportTo(targetPos.getX() + 0.5, targetPos.getY(), targetPos.getZ() + 0.5);
+                    npc.stopNewPathfinder();
+                }
             }
         }
     }
@@ -1337,6 +1361,12 @@ public class NPCRestHandler {
      * 选择休息时的目标点（床或闲逛位置，优先封闭空间但开放空间也允许）
      */
     private static BlockPos chooseRestTarget(CustomEntity npc, RestData restData, BuildingBounds bounds, ServerLevel level) {
+        long dayTime = level.getDayTime() % 24000L;
+        boolean shouldBeSleepingTime = dayTime >= 12542L && dayTime < BOUNDS_UNLOCK_TIME;
+        if (shouldBeSleepingTime) {
+            return null;
+        }
+
         // 30%概率尝试去床上睡觉（如果床存在且在范围内）
         if (restData.bedPos != null && Math.random() < 0.5) {
             // 检查床是否在范围内
@@ -1396,6 +1426,33 @@ public class NPCRestHandler {
         }
 
         return null;
+    }
+
+    private static void updateWaitingForBedStatus(CustomEntity npc, RestData restData, ServerLevel level) {
+        if (npc == null || restData == null || level == null) {
+            return;
+        }
+
+        npc.stopAllMovement();
+        npc.setNoAi(true);
+        npc.setWorking(false);
+        npc.setStatusLabel("gui.npc.status.at_home");
+
+        if (!isBedStillValid(level, restData.bedPos)) {
+            restData.bedPos = findNearbyBed(level, restData.homePos, npc);
+            if (restData.bedPos == null) {
+                return;
+            }
+        }
+
+        double bedDistance = npc.position().distanceTo(Vec3.atCenterOf(restData.bedPos));
+        if (bedDistance <= 2.2D) {
+            npc.setNoAi(false);
+            tryStartSleeping(npc, restData.bedPos, level);
+            if (npc.isSleeping()) {
+                restData.restStage = REST_STAGE_SLEEPING;
+            }
+        }
     }
 
     private static void updateSleepingStatus(CustomEntity npc, RestData restData, ServerLevel level) {
@@ -1990,7 +2047,7 @@ public class NPCRestHandler {
             //    LOGGER.info("[NPCRestHandler] NPC {} 早上5点了，提前出发去工作岗位: {}，职业: {}",
             //        npc.getFullName(), workPos, previousJob);
 
-        // simukraft: 首先设置状态标签，让RestrictedAreaGoal知道NPC要去工作了
+        // simukraft: 首先设置状态标签，让NPCBoundaryManager知道NPC要去工作了
         // 这必须在清除界限之前完成，防止tick过程中界限仍然生效
         npc.setStatusLabel("gui.npc.status.going_to_work");
 
@@ -1998,9 +2055,9 @@ public class NPCRestHandler {
         clearRestWorkflowData(npcUuid, false);
 
         // simukraft: 清除休息界限，防止NPC被限制在住宅范围内无法前往工作岗位
-        com.xiaoliang.simukraft.entity.ai.RestrictedAreaGoal areaGoal = npc.getRestrictedAreaGoal();
-        if (areaGoal != null) {
-            areaGoal.clearRestrictedArea();
+        com.xiaoliang.simukraft.entity.ai.NPCBoundaryManager boundaryManager = npc.getBoundaryManager();
+        if (boundaryManager != null) {
+            boundaryManager.clearRestrictedArea();
         }
 
         // 允许NPC移动
@@ -2055,6 +2112,13 @@ public class NPCRestHandler {
         if (npc == null || workData == null || level == null) return;
 
         UUID npcUuid = npc.getUUID();
+
+        // 已经恢复为正常工作状态时，立即退出去工作流程，避免再次被休息链路拉回家
+        if (npc.getWorkStatus() == WorkStatus.WORKING && npc.getWorkSubState() == WorkSubState.WORKING) {
+            goingToWorkNPCs.remove(npcUuid);
+            return;
+        }
+
         BlockPos currentPos = npc.blockPosition();
         BlockPos workPos = workData.workPos;
         long currentDayTime = level.getDayTime() % 24000L;
@@ -2139,30 +2203,22 @@ public class NPCRestHandler {
 
     /**
      * 开始寻路到工作位置
+     * menglannnn: 完全使用新的自定义寻路系统，不再使用原版寻路
      */
     private static void startPathfindingToWork(CustomEntity npc, BlockPos workPos) {
         if (npc == null || workPos == null) return;
 
         try {
-            PathNavigation navigation = npc.getNavigation();
-
-            // 设置目标位置（工作方块上方）
-            Vec3 targetPos = new Vec3(
-                workPos.getX() + 0.5,
-                workPos.getY() + 1,
-                workPos.getZ() + 0.5
-            );
-
-            // 开始寻路，速度提高到1.2让NPC走得更快
-            boolean canNavigate = navigation.moveTo(targetPos.x, targetPos.y, targetPos.z, 1.2);
-
-            if (canNavigate) {
-                LOGGER.info("[NPCRestHandler] NPC {} 开始寻路到工作位置: {}", npc.getFullName(), workPos);
-            } else {
-                // 如果寻路失败，直接传送
-                LOGGER.warn("[NPCRestHandler] NPC {} 寻路到工作位置失败，直接传送", npc.getFullName());
-                npc.teleportTo(targetPos.x, targetPos.y, targetPos.z);
+            if (npc.moveToWithNewPathfinder(workPos, 1.0D)) {
+                if (ServerConfig.isDebugLogEnabled()) {
+                    LOGGER.info("[NPCRestHandler] NPC {} 开始前往工作位置，当前位置: {}，目标位置: {}，目的: 上班", npc.getFullName(), npc.blockPosition(), workPos);
+                }
+                return;
             }
+
+            LOGGER.warn("[NPCRestHandler] NPC {} 前往工作位置寻路失败，当前位置: {}，目标位置: {}，目的: 上班，改为直接传送", npc.getFullName(), npc.blockPosition(), workPos);
+            npc.teleportTo(workPos.getX() + 0.5, workPos.getY() + 1, workPos.getZ() + 0.5);
+            npc.stopNewPathfinder();
         } catch (Exception e) {
             LOGGER.error("[NPCRestHandler] NPC {} 寻路到工作位置时发生错误", npc.getFullName(), e);
         }
@@ -2170,39 +2226,30 @@ public class NPCRestHandler {
 
     /**
      * 开始寻路回家
+     * menglannnn: 完全使用新的自定义寻路系统，不再使用原版寻路
      */
     private static void startPathfindingToHome(CustomEntity npc, BlockPos homePos) {
         if (npc == null || homePos == null) return;
 
         try {
-            PathNavigation navigation = npc.getNavigation();
-
-            // 设置目标位置（住宅门口）
-            Vec3 targetPos = new Vec3(
-                homePos.getX() + 0.5,
-                homePos.getY() + 1,
-                homePos.getZ() + 0.5
-            );
-
-            // 开始寻路，速度提高到1.2让NPC走得更快
-            boolean canNavigate = navigation.moveTo(targetPos.x, targetPos.y, targetPos.z, 1.2);
-
-            if (canNavigate) {
+            if (npc.moveToWithNewPathfinder(homePos, 1.0D)) {
                 npcPathfindingStatus.put(npc.getUUID(), true);
-                LOGGER.debug("NPC {} 开始寻路回家: {}", npc.getFullName(), homePos);
-            } else {
-                // 如果寻路失败，使用带粒子效果的传送回家
-                LOGGER.warn("NPC {} 寻路失败，使用传送回家", npc.getFullName());
-                teleportNPCHomeWithEffects(npc, homePos);
-                // 标记为已到家，更新状态
-                UUID npcUuid = npc.getUUID();
-                RestData restData = restingNPCs.get(npcUuid);
-                if (restData != null) {
-                    restData.hasArrivedHome = true;
-                    restData.restStage = REST_STAGE_AT_HOME;
+                if (ServerConfig.isDebugLogEnabled()) {
+                    LOGGER.info("[NPCRestHandler] NPC {} 开始前往住宅，当前位置: {}，目标位置: {}，目的: 回家", npc.getFullName(), npc.blockPosition(), homePos);
                 }
-                npcPathfindingStatus.put(npcUuid, false);
+                return;
             }
+
+            LOGGER.warn("[NPCRestHandler] NPC {} 前往住宅寻路失败，当前位置: {}，目标位置: {}，目的: 回家，改为直接传送", npc.getFullName(), npc.blockPosition(), homePos);
+            teleportNPCHomeWithEffects(npc, homePos);
+            UUID npcUuid = npc.getUUID();
+            RestData restData = restingNPCs.get(npcUuid);
+            if (restData != null) {
+                restData.hasArrivedHome = true;
+                restData.restStage = REST_STAGE_AT_HOME;
+            }
+            npcPathfindingStatus.put(npcUuid, false);
+            npc.stopNewPathfinder();
         } catch (Exception e) {
             LOGGER.error("NPC {} 寻路回家时发生错误", npc.getFullName(), e);
         }

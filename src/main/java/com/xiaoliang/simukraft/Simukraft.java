@@ -247,6 +247,7 @@ public class Simukraft {
         }
 
         private static com.xiaoliang.simukraft.client.gui.ConfigButtonHandler configButtonHandler;
+        private static boolean pathDebugHotkeyPressedLastTick;
 
         @SubscribeEvent
         public static void onScreenInit(net.minecraftforge.client.event.ScreenEvent.Init.Post event) {
@@ -268,6 +269,19 @@ public class Simukraft {
             }
 
             Minecraft mc = Minecraft.getInstance();
+
+            if (mc.player != null && mc.level != null) {
+                long window = mc.getWindow().getWindow();
+                boolean f3Pressed = org.lwjgl.glfw.GLFW.glfwGetKey(window, org.lwjgl.glfw.GLFW.GLFW_KEY_F3) == org.lwjgl.glfw.GLFW.GLFW_PRESS;
+                boolean kPressed = org.lwjgl.glfw.GLFW.glfwGetKey(window, org.lwjgl.glfw.GLFW.GLFW_KEY_K) == org.lwjgl.glfw.GLFW.GLFW_PRESS;
+                boolean hotkeyPressed = f3Pressed && kPressed;
+                if (hotkeyPressed && !pathDebugHotkeyPressedLastTick) {
+                    com.xiaoliang.simukraft.client.gui.NPCPathDebugRenderer.togglePathDebug();
+                }
+                pathDebugHotkeyPressedLastTick = hotkeyPressed;
+            } else {
+                pathDebugHotkeyPressedLastTick = false;
+            }
 
             // 只在客户端初始化完成后加载一次数据
             if (!hasLoadedData && mc.level != null) {

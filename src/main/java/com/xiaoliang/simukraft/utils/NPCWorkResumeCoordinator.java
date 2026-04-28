@@ -1,5 +1,6 @@
 package com.xiaoliang.simukraft.utils;
 
+import com.xiaoliang.simukraft.config.ServerConfig;
 import com.xiaoliang.simukraft.entity.CustomEntity;
 import com.xiaoliang.simukraft.entity.WorkStatus;
 import com.xiaoliang.simukraft.entity.WorkSubState;
@@ -96,6 +97,15 @@ public final class NPCWorkResumeCoordinator {
     }
 
     private static void scheduleTeleportIfNeeded(CustomEntity npc, BlockPos workplacePos) {
+        if (npc == null || workplacePos == null) {
+            return;
+        }
+        if (npc.moveToWithNewPathfinder(workplacePos, 1.0D)) {
+            return;
+        }
+        if (ServerConfig.isDebugLogEnabled()) {
+            com.xiaoliang.simukraft.Simukraft.LOGGER.info("[NPCWorkResumeCoordinator] NPC {} 恢复工作寻路失败，改为安排传送到: {}", npc.getFullName(), workplacePos);
+        }
         if (shouldTeleportToWorkplace(npc, workplacePos)) {
             npc.scheduleHireArrivalTeleport(workplacePos);
         }

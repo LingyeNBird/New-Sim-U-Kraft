@@ -214,8 +214,9 @@ public class FarmerDailyWorkHandler {
         // 如果NPC距离农田盒太远（超过20格），传送到农田盒附近
         if (distance > 400) { // 20格距离的平方
             BlockPos targetPos = findSafePositionNearFarmland(farmlandBoxPos, level);
-            if (targetPos != null) {
+            if (targetPos != null && !npc.moveToWithNewPathfinder(targetPos, 1.0D)) {
                 npc.teleportTo(targetPos.getX() + 0.5, targetPos.getY(), targetPos.getZ() + 0.5);
+                npc.stopNewPathfinder();
             }
         }
     }

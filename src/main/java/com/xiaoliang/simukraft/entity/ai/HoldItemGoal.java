@@ -16,11 +16,10 @@ public class HoldItemGoal extends Goal {
 
     @Override
     public boolean canUse() {
-        // 检查NPC职业是否有配置手持物品
+        if (!npc.canStartAutonomousGoal()) return false;
         String job = npc.getJob();
         if (job == null || job.isBlank()) return false;
         
-        // 从JSON配置检查是否有手持物品设置
         ItemStack heldItem = resolveHeldItemFromConfig(job);
         return !heldItem.isEmpty();
     }

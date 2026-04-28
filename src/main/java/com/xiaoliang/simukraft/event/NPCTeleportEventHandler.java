@@ -132,9 +132,14 @@ public class NPCTeleportEventHandler {
                 if (distance > 900) {
                     BlockPos targetPos = findSafePositionNearFarmland(farmlandBoxPos, level);
                     if (targetPos != null) {
-                        npc.teleportTo(targetPos.getX() + 0.5, targetPos.getY(), targetPos.getZ() + 0.5);
-                        npcTeleportStates.put(npcId, new TeleportState(targetPos, "farmer", null));
-                        Simukraft.LOGGER.info("农民传送：{} 传送到农田盒附近 {}", npc.getFullName(), targetPos);
+                        if (npc.moveToWithNewPathfinder(targetPos, 1.0D)) {
+                            Simukraft.LOGGER.info("农民寻路恢复：{} 开始前往农田盒附近 {}", npc.getFullName(), targetPos);
+                        } else {
+                            npc.teleportTo(targetPos.getX() + 0.5, targetPos.getY(), targetPos.getZ() + 0.5);
+                            npc.stopNewPathfinder();
+                            npcTeleportStates.put(npcId, new TeleportState(targetPos, "farmer", null));
+                            Simukraft.LOGGER.info("农民传送：{} 传送到农田盒附近 {}", npc.getFullName(), targetPos);
+                        }
                     }
                 }
             }

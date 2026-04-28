@@ -214,23 +214,15 @@ public final class NPCFoodMarket {
 
             ItemStack foodStack = new ItemStack(item, 1);
 
-            // 在NPC脚下生成物品实体
-            net.minecraft.world.entity.item.ItemEntity itemEntity = new net.minecraft.world.entity.item.ItemEntity(
-                level,
-                npc.getX(),
-                npc.getY(),
-                npc.getZ(),
-                foodStack
-            );
-            itemEntity.setPickUpDelay(0); // NPC可以立即捡起
-            level.addFreshEntity(itemEntity);
-
-            // NPC捡起并食用
+            // 直接让NPC食用，避免未捡起时重复购买导致掉落一地
             npc.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, foodStack);
 
             // 根据食物实际营养值恢复饥饿值
             FoodProperties foodProperties = foodStack.getFoodProperties(npc);
             int nutrition = foodProperties != null ? foodProperties.getNutrition() : 0;
+            if (nutrition <= 0) {
+                return false;
+            }
             npc.addHunger(nutrition);
 
             level.playSound(
@@ -242,6 +234,7 @@ public final class NPCFoodMarket {
                     1.0f
             );
             npc.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
+            npc.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, ItemStack.EMPTY);
             return true;
         } catch (Exception e) {
             Simukraft.LOGGER.error("[NPCFoodMarket] NPC购买食物失败: npc={}, item={}, shop={}", npc.getFullName(), plan.itemId(), plan.shopPos(), e);

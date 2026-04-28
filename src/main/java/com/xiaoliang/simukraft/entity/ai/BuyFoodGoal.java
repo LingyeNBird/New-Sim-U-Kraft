@@ -1,5 +1,7 @@
 package com.xiaoliang.simukraft.entity.ai;
 
+import com.xiaoliang.simukraft.Simukraft;
+import com.xiaoliang.simukraft.config.ServerConfig;
 import com.xiaoliang.simukraft.entity.CustomEntity;
 import com.xiaoliang.simukraft.entity.WorkStatus;
 import com.xiaoliang.simukraft.entity.WorkSubState;
@@ -29,7 +31,7 @@ public class BuyFoodGoal extends Goal {
 
     @Override
     public boolean canUse() {
-        if (npc.level().isClientSide) return false;
+        if (!npc.canStartAutonomousGoal()) return false;
         if (npc.tickCount < nextStartTick) return false;
         // simukraft: 工作中不能买食物，但午休时可以
         if (npc.getWorkStatus() == WorkStatus.WORKING && npc.getWorkSubState() != WorkSubState.LUNCH_BREAK) return false;
@@ -48,12 +50,29 @@ public class BuyFoodGoal extends Goal {
         return true;
     }
 
+    /**
+     * menglannnn: 完全使用新的自定义寻路系统，不再使用原版寻路
+     */
     @Override
     public void start() {
         if (targetPos == null) return;
         npc.setStatusLabel(NPCFoodMarket.getTravelStatusLabel(plan));
         npc.setWorkNeedDetail(NPCFoodMarket.getFoodDetailKey(plan));
-        npc.getNavigation().moveTo(targetPos.getX() + 0.5, targetPos.getY() + 1.0, targetPos.getZ() + 0.5, 1.0);
+
+        if (ServerConfig.isDebugLogEnabled()) {
+            Simukraft.LOGGER.info("[BuyFoodGoal] NPC {} 开始前往买食物，当前位置: {}，目标商店: {}，商品: {}",
+                    npc.getFullName(), npc.blockPosition(), targetPos, plan != null ? plan.itemId() : "unknown");
+        }
+
+        if (npc.moveToWithNewPathfinder(targetPos, 1.0D)) {
+            return; // 新寻路系统成功
+        }
+
+        Simukraft.LOGGER.warn("[BuyFoodGoal] NPC {} 前往买食物寻路失败，当前位置: {}，目标商店: {}，改为直接传送",
+                npc.getFullName(), npc.blockPosition(), targetPos);
+
+        npc.teleportTo(targetPos.getX() + 0.5, targetPos.getY() + 1.0, targetPos.getZ() + 0.5);
+        npc.stopNewPathfinder();
     }
 
     @Override
@@ -64,7 +83,13 @@ public class BuyFoodGoal extends Goal {
         // simukraft: 工作中停止购买，但午休时可以继续
         if (npc.getWorkStatus() == WorkStatus.WORKING && npc.getWorkSubState() != WorkSubState.LUNCH_BREAK) return false;
         if (npc.isSleeping()) return false; // simukraft: 睡觉时停止购买
-        return !npc.getNavigation().isDone();
+
+        // simukraft: 检查新寻路系统是否完成
+        com.xiaoliang.simukraft.entity.ai.path.NPCPathNavigator navigator = npc.getNPCPathNavigator();
+        if (navigator != null) {
+            return navigator.isPathfinding();
+        }
+        return false;
     }
 
     @Override
@@ -94,7 +119,21 @@ public class BuyFoodGoal extends Goal {
                         targetPos = plan.shopPos();
                         npc.setStatusLabel(NPCFoodMarket.getTravelStatusLabel(plan));
                         npc.setWorkNeedDetail(NPCFoodMarket.getFoodDetailKey(plan));
-                        npc.getNavigation().moveTo(targetPos.getX() + 0.5, targetPos.getY() + 1.0, targetPos.getZ() + 0.5, 1.0);
+
+                        if (ServerConfig.isDebugLogEnabled()) {
+                            Simukraft.LOGGER.info("[BuyFoodGoal] NPC {} 继续前往买食物，当前位置: {}，目标商店: {}，商品: {}",
+                                    npc.getFullName(), npc.blockPosition(), targetPos, plan.itemId());
+                        }
+
+                        if (npc.moveToWithNewPathfinder(targetPos, 1.0D)) {
+                            return; // 继续购买，不停止
+                        }
+
+                        Simukraft.LOGGER.warn("[BuyFoodGoal] NPC {} 继续买食物时寻路失败，当前位置: {}，目标商店: {}，改为直接传送",
+                                npc.getFullName(), npc.blockPosition(), targetPos);
+
+                        npc.teleportTo(targetPos.getX() + 0.5, targetPos.getY() + 1.0, targetPos.getZ() + 0.5);
+                        npc.stopNewPathfinder();
                         return; // 继续购买，不停止
                     }
                 }
@@ -109,7 +148,8 @@ public class BuyFoodGoal extends Goal {
 
     @Override
     public void stop() {
-        npc.getNavigation().stop();
+        // simukraft: 停止新寻路系统
+        npc.stopNewPathfinder();
         if (NPCFoodMarket.isFoodStatusLabel(npc.getStatusLabel())) {
             npc.setStatusLabel(null);
         }

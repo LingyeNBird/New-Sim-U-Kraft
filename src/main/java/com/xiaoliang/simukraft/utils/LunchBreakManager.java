@@ -32,6 +32,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * 状态持久化：使用NPC的NBT数据（workSubState字段）
  */
+@SuppressWarnings("null")
 public class LunchBreakManager {
 
     // 午休时间范围
@@ -203,20 +204,9 @@ public class LunchBreakManager {
         }
 
         // 清除休息界限，让NPC午休期间可以自由活动
-        com.xiaoliang.simukraft.entity.ai.RestrictedAreaGoal areaGoal = npc.getRestrictedAreaGoal();
-        if (areaGoal != null) {
-            areaGoal.clearRestrictedArea();
-        }
-
-        // simukraft: 清除寻路层面的边界限制
-        if (npc.getNavigation() instanceof com.xiaoliang.simukraft.entity.ai.RestrictedGroundPathNavigation nav) {
-            nav.disableRestriction();
-        }
-
-        // simukraft: 清除随机漫步的边界限制
-        com.xiaoliang.simukraft.entity.ai.RestrictedRandomStrollGoal strollGoal = npc.getRestrictedRandomStrollGoal();
-        if (strollGoal != null) {
-            strollGoal.disableRestriction();
+        com.xiaoliang.simukraft.entity.ai.NPCBoundaryManager boundaryManager = npc.getBoundaryManager();
+        if (boundaryManager != null) {
+            boundaryManager.clearRestrictedArea();
         }
 
         Simukraft.LOGGER.debug("[LunchBreakManager] NPC {} 的所有活动已停止，已设置为可移动状态", npc.getFullName());
@@ -235,17 +225,15 @@ public class LunchBreakManager {
         BlockPos workPos = lunchBreakWorkPositions.get(npcId);
 
         if (workPos != null) {
-            // 检查距离
-            double distance = npc.position().distanceTo(new net.minecraft.world.phys.Vec3(
-                workPos.getX() + 0.5, workPos.getY(), workPos.getZ() + 0.5));
-
-            if (distance > 3.0) {
-                // 距离太远，直接传送
-                Simukraft.LOGGER.debug("[LunchBreakManager] NPC {} 距离工作位置{}格，传送回工作位置",
+            if (!npc.moveToWithNewPathfinder(workPos, 1.0D)) {
+                double distance = npc.position().distanceTo(new net.minecraft.world.phys.Vec3(
+                    workPos.getX() + 0.5, workPos.getY(), workPos.getZ() + 0.5));
+                Simukraft.LOGGER.debug("[LunchBreakManager] NPC {} 午休结束寻路失败，距离工作位置{}格，改为传送回工作位置",
                     npc.getFullName(), distance);
                 spawnTeleportParticles(npc);
                 npc.teleportTo(workPos.getX() + 0.5, workPos.getY() + 1, workPos.getZ() + 0.5);
                 spawnTeleportParticles(npc);
+                npc.stopNewPathfinder();
             }
         }
 
@@ -272,20 +260,9 @@ public class LunchBreakManager {
         npc.setStatusLabel(null);
 
         // 清除休息界限，防止NPC被限制在住宅范围内无法前往工作岗位
-        com.xiaoliang.simukraft.entity.ai.RestrictedAreaGoal areaGoal = npc.getRestrictedAreaGoal();
-        if (areaGoal != null) {
-            areaGoal.clearRestrictedArea();
-        }
-
-        // simukraft: 清除寻路层面的边界限制
-        if (npc.getNavigation() instanceof com.xiaoliang.simukraft.entity.ai.RestrictedGroundPathNavigation nav) {
-            nav.disableRestriction();
-        }
-
-        // simukraft: 清除随机漫步的边界限制
-        com.xiaoliang.simukraft.entity.ai.RestrictedRandomStrollGoal strollGoal = npc.getRestrictedRandomStrollGoal();
-        if (strollGoal != null) {
-            strollGoal.disableRestriction();
+        com.xiaoliang.simukraft.entity.ai.NPCBoundaryManager boundaryManager = npc.getBoundaryManager();
+        if (boundaryManager != null) {
+            boundaryManager.clearRestrictedArea();
         }
 
         // 恢复建筑师的建造任务

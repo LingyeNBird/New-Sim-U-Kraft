@@ -3,11 +3,10 @@ package com.xiaoliang.simukraft.entity;
 import com.xiaoliang.simukraft.Simukraft;
 import com.xiaoliang.simukraft.config.ServerConfig;
 import com.xiaoliang.simukraft.entity.ai.HoldItemGoal;
-import com.xiaoliang.simukraft.entity.ai.RestrictedAreaGoal;
-import com.xiaoliang.simukraft.entity.ai.RestrictedGroundPathNavigation;
+import com.xiaoliang.simukraft.entity.ai.IdleNearbyStrollGoal;
+import com.xiaoliang.simukraft.entity.ai.NPCBoundaryManager;
 import com.xiaoliang.simukraft.init.ModSoundEvents;
 import com.xiaoliang.simukraft.init.ModBlocks;
-import com.xiaoliang.simukraft.utils.LunchBreakManager;
 import com.xiaoliang.simukraft.utils.NPCDataManager;
 import com.xiaoliang.simukraft.utils.NameManager;
 import com.xiaoliang.simukraft.utils.ResidentManager;
@@ -136,6 +135,12 @@ public class CustomEntity extends Animal {
     public CustomEntity(EntityType<? extends Animal> type, Level level) {
         super(type, level);
         this.moveControl = new CustomMoveControl(this);
+        this.setMaxUpStep(1.0F);
+        
+        // simukraft: 初始化新的自定义寻路系统
+        if (level instanceof ServerLevel serverLevel) {
+            this.npcPathNavigator = new com.xiaoliang.simukraft.entity.ai.path.NPCPathNavigator(this, serverLevel);
+        }
     }
 
     @Override
@@ -185,41 +190,113 @@ public class CustomEntity extends Animal {
         return super.getDimensions(pose);
     }
 
-    // simukraft: 限制活动范围的AI目标（menglannnn: 休息时使用，优先级最高）
-    private RestrictedAreaGoal restrictedAreaGoal;
-    // simukraft: 带边界限制的随机漫步Goal（menglannnn: 休息时只在建筑内随机移动）
-    private com.xiaoliang.simukraft.entity.ai.RestrictedRandomStrollGoal restrictedRandomStrollGoal;
+    // simukraft: NPC边界管理器（合并原RestrictedAreaGoal、RestrictedGroundPathNavigation、RestrictedRandomStrollGoal）
+    private NPCBoundaryManager boundaryManager;
+    
+    // simukraft: 新的自定义寻路系统（menglannnn: 完全独立于原版寻路）
+    private com.xiaoliang.simukraft.entity.ai.path.NPCPathNavigator npcPathNavigator;
+
+    public boolean isUsingCustomPathfinder() {
+        return npcPathNavigator != null && npcPathNavigator.getTargetPos() != null;
+    }
+
+    public boolean canStartAutonomousGoal() {
+        return !isUsingCustomPathfinder() && !isSleeping();
+    }
 
     @Override
     protected void registerGoals() {
-        // simukraft: 添加限制范围Goal，优先级设为最高（0），确保在休息时优先执行
-        this.restrictedAreaGoal = new RestrictedAreaGoal(this);
-        this.goalSelector.addGoal(0, this.restrictedAreaGoal);
+        // simukraft: 添加边界管理器，优先级设为最高（0），确保在休息时优先执行
+        this.boundaryManager = new NPCBoundaryManager(this);
+        this.goalSelector.addGoal(0, this.boundaryManager);
 
         this.goalSelector.addGoal(1, new FloatGoal(this));
         this.goalSelector.addGoal(2, new com.xiaoliang.simukraft.entity.ai.BuyFoodGoal(this));
         this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 8.0F));
-        
-        // simukraft: 使用带边界限制的随机漫步Goal
-        this.restrictedRandomStrollGoal = new com.xiaoliang.simukraft.entity.ai.RestrictedRandomStrollGoal(this, 1.0D);
-        this.goalSelector.addGoal(4, this.restrictedRandomStrollGoal);
-        
+        this.goalSelector.addGoal(4, new IdleNearbyStrollGoal(this));
         this.goalSelector.addGoal(5, new RandomLookAroundGoal(this));
         this.goalSelector.addGoal(6, new HoldItemGoal(this));
     }
 
     /**
-     * 获取限制范围Goal（menglannnn: 用于NPCRestHandler设置休息边界）
+     * 获取边界管理器（用于NPCRestHandler设置休息边界）
      */
-    public RestrictedAreaGoal getRestrictedAreaGoal() {
-        return this.restrictedAreaGoal;
+    public NPCBoundaryManager getBoundaryManager() {
+        return this.boundaryManager;
+    }
+    
+    /**
+     * 获取新的自定义寻路导航器（menglannnn: 完全独立于原版寻路）
+     */
+    public com.xiaoliang.simukraft.entity.ai.path.NPCPathNavigator getNPCPathNavigator() {
+        return this.npcPathNavigator;
+    }
+    
+    /**
+     * 使用新的寻路系统移动到指定位置
+     * @param pos 目标位置
+     * @return 是否成功开始寻路
+     */
+    public boolean moveToWithNewPathfinder(BlockPos pos) {
+        if (npcPathNavigator != null) {
+            if (ServerConfig.isDebugLogEnabled()) {
+                Simukraft.LOGGER.info("[CustomEntity] NPC {} 调用新寻路，当前位置: {}，目标位置: {}，目的: 通用路径请求", this.getFullName(), this.blockPosition(), pos);
+            }
+            return npcPathNavigator.moveTo(pos, 0.35);
+        }
+        return false;
+    }
+    
+    /**
+     * 使用新的寻路系统移动到指定位置
+     * @param x 目标X坐标
+     * @param y 目标Y坐标
+     * @param z 目标Z坐标
+     * @return 是否成功开始寻路
+     */
+    public boolean moveToWithNewPathfinder(double x, double y, double z) {
+        if (npcPathNavigator != null) {
+            if (ServerConfig.isDebugLogEnabled()) {
+                Simukraft.LOGGER.info("[CustomEntity] NPC {} 调用新寻路，当前位置: {}，目标位置: ({}, {}, {})，目的: 通用路径请求", this.getFullName(), this.blockPosition(), x, y, z);
+            }
+            return npcPathNavigator.moveTo(x, y, z, 0.35);
+        }
+        return false;
     }
 
+    public boolean moveToWithNewPathfinder(BlockPos pos, double reachDistance) {
+        if (npcPathNavigator != null) {
+            if (ServerConfig.isDebugLogEnabled()) {
+                Simukraft.LOGGER.info("[CustomEntity] NPC {} 调用新寻路，当前位置: {}，目标位置: {}，到达阈值: {}，目的: 通用路径请求", this.getFullName(), this.blockPosition(), pos, reachDistance);
+            }
+            return npcPathNavigator.moveTo(pos, reachDistance);
+        }
+        return false;
+    }
+
+    public boolean moveToWithNewPathfinder(double x, double y, double z, double reachDistance) {
+        if (npcPathNavigator != null) {
+            if (ServerConfig.isDebugLogEnabled()) {
+                Simukraft.LOGGER.info("[CustomEntity] NPC {} 调用新寻路，当前位置: {}，目标位置: ({}, {}, {})，到达阈值: {}，目的: 通用路径请求", this.getFullName(), this.blockPosition(), x, y, z, reachDistance);
+            }
+            return npcPathNavigator.moveTo(x, y, z, reachDistance);
+        }
+        return false;
+    }
+
+    public void stopAllMovement() {
+        stopNewPathfinder();
+        this.getNavigation().stop();
+        this.setDeltaMovement(Vec3.ZERO);
+    }
+    
     /**
-     * 获取带边界限制的随机漫步Goal（menglannnn: 用于NPCRestHandler设置休息边界）
+     * 停止新的寻路系统
      */
-    public com.xiaoliang.simukraft.entity.ai.RestrictedRandomStrollGoal getRestrictedRandomStrollGoal() {
-        return this.restrictedRandomStrollGoal;
+    public void stopNewPathfinder() {
+        if (npcPathNavigator != null) {
+            npcPathNavigator.stop();
+        }
     }
 
     public static AttributeSupplier.Builder createAttributes() {
@@ -680,6 +757,15 @@ public class CustomEntity extends Animal {
                 this.entityData.set(DATA_HAS_ACTIVE_TASK, hasActiveWork);
             }
             
+            // simukraft: 躺在床上时不允许有任何动作
+            if (this.isSleeping()) {
+                this.stopNewPathfinder();
+                this.getNavigation().stop();
+                this.setDeltaMovement(Vec3.ZERO);
+                this.setWorking(false);
+                return;
+            }
+
             // 触发挥手动画（服务器端）
             if (hasActiveWork && this.tickCount % 20 == 0) {
                 this.swing(InteractionHand.MAIN_HAND);
@@ -766,7 +852,7 @@ public class CustomEntity extends Animal {
             // 处理AI恢复延迟
             if (aiRestoreDelay > 0) {
                 aiRestoreDelay--;
-                if (aiRestoreDelay <= 0) {
+                if (aiRestoreDelay <= 0 && !this.isSleeping()) {
                     this.setNoAi(false);
                     // simukraft: 不再强制停止移动，避免与击退效果冲突导致一停一顿
                     // this.getNavigation().stop();
@@ -783,8 +869,21 @@ public class CustomEntity extends Animal {
         }
 
         // 处理门交互 - NPC可以自动开关门
-        if (!this.level().isClientSide && this.tickCount % 5 == 0) {
+        if (!this.level().isClientSide && !this.isSleeping() && this.tickCount % 5 == 0) {
             handleDoorInteraction();
+        }
+        
+        // simukraft: 更新新的自定义寻路系统
+        if (!this.level().isClientSide && !this.isSleeping() && npcPathNavigator != null) {
+            npcPathNavigator.tick();
+        }
+
+        if (!this.level().isClientSide && this.tickCount % 10 == 0) {
+            syncPathDebugToNearbyPlayers();
+        }
+
+        if (this.isSleeping()) {
+            return;
         }
 
         // 处理建造任务
@@ -1604,7 +1703,8 @@ public class CustomEntity extends Animal {
 
     @Override
     protected PathNavigation createNavigation(Level level) {
-        return new RestrictedGroundPathNavigation(this, level);
+        // simukraft: 使用原版地面寻路，边界限制由NPCBoundaryManager处理
+        return new net.minecraft.world.entity.ai.navigation.GroundPathNavigation(this, level);
     }
 
     private static class CustomMoveControl extends MoveControl {
@@ -1617,13 +1717,13 @@ public class CustomEntity extends Animal {
 
         @Override
         public void tick() {
-            // simukraft: 睡觉时不能移动，防止"躺着跑"
             if (npc.isSleeping()) {
+                npc.setSpeed(0.0F);
+                npc.setZza(0.0F);
+                npc.setXxa(0.0F);
                 return;
             }
-            if (!npc.isWorking) {
-                super.tick();
-            }
+            super.tick();
         }
     }
 
@@ -1983,6 +2083,53 @@ public class CustomEntity extends Animal {
     // ==================== 门交互功能 ====================
 
     private int doorCooldown = 0;
+
+    private void syncPathDebugToNearbyPlayers() {
+        if (!(this.level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+
+        java.util.List<net.minecraft.core.BlockPos> nodePositions = new java.util.ArrayList<>();
+        java.util.List<String> nodeTypes = new java.util.ArrayList<>();
+        int currentIndex = 0;
+        boolean clear = true;
+        boolean blocked = false;
+
+        if (npcPathNavigator != null) {
+            blocked = npcPathNavigator.isBlockedByObstacle();
+            net.minecraft.world.phys.Vec3 debugTargetPos = npcPathNavigator.getDebugDisplayTargetPos();
+            if (debugTargetPos != null) {
+                nodePositions.add(net.minecraft.core.BlockPos.containing(debugTargetPos));
+                nodeTypes.add("TARGET");
+            }
+            com.xiaoliang.simukraft.entity.ai.path.NPCPath currentPath = npcPathNavigator.getCurrentPath();
+            if (currentPath != null && !currentPath.isEmpty()) {
+                currentIndex = currentPath.getCurrentIndex();
+                for (com.xiaoliang.simukraft.entity.ai.path.NPCPathNode node : currentPath.getNodes()) {
+                    nodePositions.add(node.pos);
+                    nodeTypes.add(node.type.name());
+                }
+                clear = false;
+            } else if (!nodePositions.isEmpty()) {
+                clear = false;
+            }
+        }
+
+        com.xiaoliang.simukraft.network.SyncNPCPathDebugPacket packet =
+                new com.xiaoliang.simukraft.network.SyncNPCPathDebugPacket(this.getUUID(), currentIndex, nodePositions, nodeTypes, clear, blocked);
+
+        if (ServerConfig.isDebugLogEnabled()) {
+            Simukraft.LOGGER.info("[CustomEntity] 同步NPC路径调试数据: npc={}, clear={}, blocked={}, nodes={}", this.getFullName(), clear, blocked, nodePositions.size());
+        }
+
+        serverLevel.getServer().getPlayerList().getPlayers().forEach(player -> {
+            if (player.level() == serverLevel
+                    && player.distanceTo(this) < 128.0F
+                    && serverLevel.getServer().getPlayerList().isOp(player.getGameProfile())) {
+                com.xiaoliang.simukraft.network.NetworkManager.sendToPlayer(packet, player);
+            }
+        });
+    }
 
     /**
      * 处理门交互 - NPC可以自动开门（不会自动关闭）
@@ -2404,5 +2551,13 @@ public class CustomEntity extends Animal {
         return heldItemId.contains(":")
                 ? ResourceLocation.tryParse(heldItemId)
                 : ResourceLocation.tryParse("minecraft:" + heldItemId);
+    }
+
+    /**
+     * 执行跳跃（供新寻路系统调用）
+     * menglannnn: 包装protected方法供外部使用
+     */
+    public void doJump() {
+        this.jumpFromGround();
     }
 }

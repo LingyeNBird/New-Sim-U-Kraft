@@ -13,6 +13,7 @@ import com.xiaoliang.simukraft.entity.WorkStatus;
 import com.xiaoliang.simukraft.init.ModEntities;
 import com.xiaoliang.simukraft.utils.FileUtils;
 import com.xiaoliang.simukraft.utils.NPCDataManager;
+import com.xiaoliang.simukraft.utils.NPCFoodMarket;
 import com.xiaoliang.simukraft.world.CityData;
 import com.xiaoliang.simukraft.world.OfficialInvitationService;
 import net.minecraft.commands.CommandSourceStack;
@@ -160,6 +161,161 @@ public class CommandSimukraft {
                             }
                             return 0;
                         }))
+                    .then(Commands.literal("buyfoodtest")
+                        .executes(context -> {
+                            ServerPlayer player = context.getSource().getPlayer();
+                            if (player == null) {
+                                return 0;
+                            }
+
+                            var entities = player.level().getEntitiesOfClass(CustomEntity.class,
+                                    player.getBoundingBox().inflate(5.0));
+                            if (entities.isEmpty()) {
+                                context.getSource().sendFailure(Component.translatable("command.simnpc.no_npc_found"));
+                                return 0;
+                            }
+
+                            int count = 0;
+                            for (CustomEntity npc : entities) {
+                                NPCFoodMarket.PurchasePlan plan = NPCFoodMarket.findPurchasePlan(player.serverLevel(), npc);
+                                if (plan == null) {
+                                    Component npcName = npc.getCustomName() != null ? npc.getCustomName() : Component.literal(npc.getFullName());
+                                    context.getSource().sendFailure(Component.literal("§cNPC " + npcName.getString() + " 附近没有可测试的食物商店"));
+                                    continue;
+                                }
+
+                                npc.stopNewPathfinder();
+                                npc.setStatusLabel(NPCFoodMarket.getTravelStatusLabel(plan));
+                                npc.setWorkNeedDetail(NPCFoodMarket.getFoodDetailKey(plan));
+
+                                boolean started = npc.moveToWithNewPathfinder(plan.shopPos());
+                                Component npcName = npc.getCustomName() != null ? npc.getCustomName() : Component.literal(npc.getFullName());
+                                if (started) {
+                                    context.getSource().sendSuccess(() -> Component.literal(
+                                            "§a已强制NPC开始买食物测试寻路: " + npcName.getString() + " -> " + plan.shopPos() + " / " + plan.itemId()), false);
+                                    count++;
+                                } else {
+                                    context.getSource().sendFailure(Component.literal(
+                                            "§cNPC买食物测试寻路启动失败: " + npcName.getString()));
+                                }
+                            }
+                            return count;
+                        })
+                        .then(Commands.literal("uuid")
+                            .then(Commands.argument("uuid", StringArgumentType.string())
+                                .executes(context -> {
+                                    ServerPlayer player = context.getSource().getPlayer();
+                                    if (player == null) {
+                                        return 0;
+                                    }
+
+                                    String uuidText = StringArgumentType.getString(context, "uuid");
+                                    UUID targetUuid;
+                                    try {
+                                        targetUuid = UUID.fromString(uuidText);
+                                    } catch (IllegalArgumentException e) {
+                                        context.getSource().sendFailure(Component.literal("§cUUID格式无效: " + uuidText));
+                                        return 0;
+                                    }
+
+                                    CustomEntity targetNpc = null;
+                                    for (CustomEntity npc : player.level().getEntitiesOfClass(CustomEntity.class, player.getBoundingBox().inflate(64.0))) {
+                                        if (npc.getUUID().equals(targetUuid)) {
+                                            targetNpc = npc;
+                                            break;
+                                        }
+                                    }
+                                    if (targetNpc == null) {
+                                        context.getSource().sendFailure(Component.literal("§c未找到指定UUID的NPC: " + uuidText));
+                                        return 0;
+                                    }
+
+                                    NPCFoodMarket.PurchasePlan plan = NPCFoodMarket.findPurchasePlan(player.serverLevel(), targetNpc);
+                                    if (plan == null) {
+                                        context.getSource().sendFailure(Component.literal("§c该NPC附近没有可测试的食物商店: " + targetNpc.getFullName()));
+                                        return 0;
+                                    }
+
+                                    final CustomEntity finalTargetNpc = targetNpc;
+                                    final NPCFoodMarket.PurchasePlan finalPlan = plan;
+
+                                    finalTargetNpc.stopNewPathfinder();
+                                    finalTargetNpc.setStatusLabel(NPCFoodMarket.getTravelStatusLabel(finalPlan));
+                                    finalTargetNpc.setWorkNeedDetail(NPCFoodMarket.getFoodDetailKey(finalPlan));
+
+                                    boolean started = finalTargetNpc.moveToWithNewPathfinder(finalPlan.shopPos());
+                                    if (!started) {
+                                        context.getSource().sendFailure(Component.literal("§c指定NPC买食物测试寻路启动失败: " + finalTargetNpc.getFullName()));
+                                        return 0;
+                                    }
+
+                                    context.getSource().sendSuccess(() -> Component.literal(
+                                            "§a已强制指定NPC开始买食物测试寻路: " + finalTargetNpc.getFullName() + " -> " + finalPlan.shopPos() + " / " + finalPlan.itemId()), false);
+                                    return 1;
+                                }))))
+                    .then(Commands.literal("stoptest")
+                        .executes(context -> {
+                            ServerPlayer player = context.getSource().getPlayer();
+                            if (player == null) {
+                                return 0;
+                            }
+
+                            var entities = player.level().getEntitiesOfClass(CustomEntity.class,
+                                    player.getBoundingBox().inflate(5.0));
+                            if (entities.isEmpty()) {
+                                context.getSource().sendFailure(Component.translatable("command.simnpc.no_npc_found"));
+                                return 0;
+                            }
+
+                            int count = 0;
+                            for (CustomEntity npc : entities) {
+                                npc.stopNewPathfinder();
+                                npc.getNavigation().stop();
+                                npc.setStatusLabel(null);
+                                npc.setWorkNeedDetail("");
+                                context.getSource().sendSuccess(() -> Component.literal("§a已停止NPC测试寻路: " + npc.getFullName()), false);
+                                count++;
+                            }
+                            return count;
+                        })
+                        .then(Commands.literal("uuid")
+                            .then(Commands.argument("uuid", StringArgumentType.string())
+                                .executes(context -> {
+                                    ServerPlayer player = context.getSource().getPlayer();
+                                    if (player == null) {
+                                        return 0;
+                                    }
+
+                                    String uuidText = StringArgumentType.getString(context, "uuid");
+                                    UUID targetUuid;
+                                    try {
+                                        targetUuid = UUID.fromString(uuidText);
+                                    } catch (IllegalArgumentException e) {
+                                        context.getSource().sendFailure(Component.literal("§cUUID格式无效: " + uuidText));
+                                        return 0;
+                                    }
+
+                                    CustomEntity targetNpc = null;
+                                    for (CustomEntity npc : player.level().getEntitiesOfClass(CustomEntity.class, player.getBoundingBox().inflate(64.0))) {
+                                        if (npc.getUUID().equals(targetUuid)) {
+                                            targetNpc = npc;
+                                            break;
+                                        }
+                                    }
+                                    if (targetNpc == null) {
+                                        context.getSource().sendFailure(Component.literal("§c未找到指定UUID的NPC: " + uuidText));
+                                        return 0;
+                                    }
+
+                                    final CustomEntity finalTargetNpc = targetNpc;
+
+                                    finalTargetNpc.stopNewPathfinder();
+                                    finalTargetNpc.getNavigation().stop();
+                                    finalTargetNpc.setStatusLabel(null);
+                                    finalTargetNpc.setWorkNeedDetail("");
+                                    context.getSource().sendSuccess(() -> Component.literal("§a已停止指定NPC测试寻路: " + finalTargetNpc.getFullName()), false);
+                                    return 1;
+                                }))))
                 )
                 // npcxp - NPC经验值
                 .then(Commands.literal("npcxp")

@@ -1,6 +1,7 @@
 package com.xiaoliang.simukraft.entity.ai.path;
 
 import com.xiaoliang.simukraft.Simukraft;
+import com.xiaoliang.simukraft.config.ServerConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
@@ -214,7 +215,7 @@ public class NPCPathFinder {
     }
 
     private boolean isReachableAdjacentHeight(NPCPathNode from, NPCPathNode to) {
-        double heightDelta = to.standY - from.standY;
+        double heightDelta = calculateSignedVerticalDistance(from, to);
         if (heightDelta > 0.5D + COLLISION_EPSILON && isSameVanillaAutoStepBlock(from, to)) {
             return false;
         }
@@ -228,7 +229,7 @@ public class NPCPathFinder {
     }
 
     private double scoreColumnNeighbor(NPCPathNode from, NPCPathNode node) {
-        double heightDelta = Math.abs(node.standY - from.standY);
+        double heightDelta = Math.abs(calculateSignedVerticalDistance(from, node));
         if (isVanillaAutoStepNode(node.pos)) {
             return heightDelta;
         }
@@ -247,20 +248,23 @@ public class NPCPathFinder {
     }
 
     private NPCPathNode createNeighbor(NPCPathNode from, NPCPathNode target, NPCPathNode.NodeType preferredType) {
-        double heightDelta = target.standY - from.standY;
+        double heightDelta = calculateSignedVerticalDistance(from, target);
         if (preferredType == NPCPathNode.NodeType.DOOR) {
             return copyNode(target, NPCPathNode.NodeType.DOOR, NPCPathNode.MovementAction.DOOR);
         }
         if (preferredType == NPCPathNode.NodeType.CLIMB) {
             return copyNode(target, NPCPathNode.NodeType.CLIMB, NPCPathNode.MovementAction.CLIMB);
         }
-        if (isSameVanillaAutoStepBlock(from, target) && heightDelta <= 0.5D + COLLISION_EPSILON && heightDelta >= -0.5D - COLLISION_EPSILON) {
+        if (isSameVanillaAutoStepBlock(from, target) && heightDelta <= WALK_STEP_HEIGHT + COLLISION_EPSILON && heightDelta >= -WALK_STEP_HEIGHT - COLLISION_EPSILON) {
+            logStepDecision("SAME_AUTO_STEP_TRAVERSE", from, target, heightDelta, preferredType);
             return copyNode(target, NPCPathNode.NodeType.WALKABLE, NPCPathNode.MovementAction.TRAVERSE);
         }
         if (isVanillaAutoStepTransition(from.pos, target.pos) && heightDelta <= WALK_STEP_HEIGHT + COLLISION_EPSILON && heightDelta >= -WALK_STEP_HEIGHT - COLLISION_EPSILON) {
+            logStepDecision("AUTO_STEP_TRANSITION_TRAVERSE", from, target, heightDelta, preferredType);
             return copyNode(target, NPCPathNode.NodeType.WALKABLE, NPCPathNode.MovementAction.TRAVERSE);
         }
         if (heightDelta > WALK_STEP_HEIGHT && heightDelta < MAX_ASCEND_HEIGHT) {
+            logStepDecision("ASCEND_CLASSIFIED", from, target, heightDelta, preferredType);
             return copyNode(target, NPCPathNode.NodeType.JUMP, NPCPathNode.MovementAction.ASCEND);
         }
         if (heightDelta >= MAX_ASCEND_HEIGHT) {
@@ -278,6 +282,31 @@ public class NPCPathFinder {
     private NPCPathNode createNeighbor(NPCPathNode from, BlockPos pos, NPCPathNode.NodeType preferredType) {
         NPCPathNode target = createNode(pos, preferredType, NPCPathNode.MovementAction.TRAVERSE);
         return createNeighbor(from, target, preferredType);
+    }
+
+    private double calculateSignedVerticalDistance(NPCPathNode from, NPCPathNode to) {
+        double hypotenuse = from.distanceTo(to);
+        double dx = to.standX - from.standX;
+        double dz = to.standZ - from.standZ;
+        double horizontalSquared = dx * dx + dz * dz;
+        double verticalSquared = Math.max(0.0D, hypotenuse * hypotenuse - horizontalSquared);
+        double verticalDistance = Math.sqrt(verticalSquared);
+        return to.standY >= from.standY ? verticalDistance : -verticalDistance;
+    }
+
+    private void logStepDecision(String reason, NPCPathNode from, NPCPathNode target, double heightDelta, NPCPathNode.NodeType preferredType) {
+        if (!ServerConfig.isDebugLogEnabled()) {
+            return;
+        }
+        if (!isVanillaAutoStepTransition(from.pos, target.pos) && heightDelta <= WALK_STEP_HEIGHT + COLLISION_EPSILON) {
+            return;
+        }
+        Simukraft.LOGGER.info("[NPCPathFinder][StepTrace] reason={} from={} fromStand=({},{},{}) to={} toStand=({},{},{}) heightDelta={} hypotenuse={} preferredType={} sameAutoStep={} autoStepTransition={}",
+                reason,
+                from.pos, from.standX, from.standY, from.standZ,
+                target.pos, target.standX, target.standY, target.standZ,
+                heightDelta, from.distanceTo(target), preferredType,
+                isSameVanillaAutoStepBlock(from, target), isVanillaAutoStepTransition(from.pos, target.pos));
     }
 
     private NPCPathNode createNode(BlockPos pos, NPCPathNode.NodeType type, NPCPathNode.MovementAction action) {

@@ -20,6 +20,8 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
+import java.util.concurrent.ThreadLocalRandom;
+
 /**
  * NPC移动控制器（menglannnn: 控制NPC沿着路径移动）
  */
@@ -33,6 +35,14 @@ public class NPCMoveController {
     private static final double ARRIVAL_DISTANCE = 0.5; // 到达节点的距离阈值
     private static final double WALK_MOVE_SPEED = 0.22D;
     private static final double RUN_MOVE_SPEED = 0.4D;
+    private static final double FATIGUE_MIN_SPEED = 0.1D;
+    private static final double FATIGUE_MAX_SPEED = 0.2D;
+    private static final int FATIGUE_MIN_RUNNING_TICKS = 120;
+    private static final int FATIGUE_RANDOM_RUNNING_TICKS = 160;
+    private static final int FATIGUE_MIN_DURATION_TICKS = 45;
+    private static final int FATIGUE_RANDOM_DURATION_TICKS = 90;
+    private static final int FATIGUE_RECOVERY_TICKS = 80;
+    private static final double FATIGUE_TRIGGER_CHANCE = 0.018D;
     private static final double RUN_REMAINING_DISTANCE = 8.0D;
     private static final double RUN_TARGET_DISTANCE = 8.0D;
     private static final double RUN_DIRECT_DISTANCE = 4.0D;
@@ -66,6 +76,11 @@ public class NPCMoveController {
     private int stepUpLockTicks;
     private int stepUpAirTicks;
     private StepUpPhase stepUpPhase;
+    private int runningTicks;
+    private int fatigueTriggerTicks;
+    private int fatigueTicks;
+    private int fatigueCooldownTicks;
+    private double fatigueSpeed;
 
     private enum ObstacleType {
         NONE,
@@ -102,6 +117,11 @@ public class NPCMoveController {
         this.stepUpLockTicks = 0;
         this.stepUpAirTicks = 0;
         this.stepUpPhase = StepUpPhase.NONE;
+        this.runningTicks = 0;
+        this.fatigueTriggerTicks = nextFatigueTriggerTicks();
+        this.fatigueTicks = 0;
+        this.fatigueCooldownTicks = 0;
+        this.fatigueSpeed = WALK_MOVE_SPEED;
     }
     
     /**
@@ -119,6 +139,7 @@ public class NPCMoveController {
         this.stuckTicks = 0;
         this.lastPos = npc.position();
         this.movementBlocked = false;
+        resetFatigueState();
         
         return true;
     }
@@ -141,6 +162,7 @@ public class NPCMoveController {
         this.stepUpLockTicks = 0;
         this.stepUpAirTicks = 0;
         this.stepUpPhase = StepUpPhase.NONE;
+        resetFatigueState();
         
         // 停止NPC移动
         npc.setDeltaMovement(Vec3.ZERO);
@@ -1495,9 +1517,58 @@ public class NPCMoveController {
         }
         double baseSpeed = npc.getAttributeValue(Attributes.MOVEMENT_SPEED);
         boolean running = shouldRunToTarget(targetPos);
+        updateFatigueState(running);
         double targetSpeed = running ? RUN_MOVE_SPEED : WALK_MOVE_SPEED;
+        if (running && fatigueTicks > 0) {
+            targetSpeed = fatigueSpeed;
+        }
         double maxAllowedSpeed = running ? baseSpeed * SPRINT_ATTRIBUTE_MULTIPLIER : baseSpeed;
         return Math.min(maxAllowedSpeed, targetSpeed);
+    }
+
+    private void updateFatigueState(boolean running) {
+        if (fatigueCooldownTicks > 0) {
+            fatigueCooldownTicks--;
+        }
+        if (!running) {
+            runningTicks = 0;
+            if (fatigueTicks > 0) {
+                fatigueTicks--;
+            }
+            return;
+        }
+        if (fatigueTicks > 0) {
+            fatigueTicks--;
+            runningTicks = Math.max(0, runningTicks - 1);
+            if (fatigueTicks == 0) {
+                fatigueCooldownTicks = FATIGUE_RECOVERY_TICKS;
+                fatigueTriggerTicks = nextFatigueTriggerTicks();
+            }
+            return;
+        }
+        runningTicks++;
+        if (fatigueCooldownTicks <= 0 && runningTicks >= fatigueTriggerTicks && ThreadLocalRandom.current().nextDouble() < FATIGUE_TRIGGER_CHANCE) {
+            startFatigueSlowdown();
+        }
+    }
+
+    private void startFatigueSlowdown() {
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        fatigueTicks = FATIGUE_MIN_DURATION_TICKS + random.nextInt(FATIGUE_RANDOM_DURATION_TICKS + 1);
+        fatigueSpeed = FATIGUE_MIN_SPEED + random.nextDouble(FATIGUE_MAX_SPEED - FATIGUE_MIN_SPEED);
+        runningTicks = 0;
+    }
+
+    private int nextFatigueTriggerTicks() {
+        return FATIGUE_MIN_RUNNING_TICKS + ThreadLocalRandom.current().nextInt(FATIGUE_RANDOM_RUNNING_TICKS + 1);
+    }
+
+    private void resetFatigueState() {
+        runningTicks = 0;
+        fatigueTriggerTicks = nextFatigueTriggerTicks();
+        fatigueTicks = 0;
+        fatigueCooldownTicks = 0;
+        fatigueSpeed = WALK_MOVE_SPEED;
     }
 
     private boolean shouldRunToTarget(Vec3 targetPos) {

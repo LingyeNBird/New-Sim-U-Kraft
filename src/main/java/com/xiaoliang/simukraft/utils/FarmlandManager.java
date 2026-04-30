@@ -19,8 +19,6 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FarmBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -33,6 +31,7 @@ import java.util.UUID;
  * 整合了绑定箱子、雇佣验证、工作流启停及失效处理逻辑。
  * 遵循单一职责与高内聚原则，作为农场业务的唯一入口。
  */
+@SuppressWarnings("null")
 public final class FarmlandManager {
     public static final int SEARCH_RADIUS = 8;
 
@@ -311,71 +310,6 @@ public final class FarmlandManager {
         return planted > 0;
     }
 
-    private static boolean checkAndClearArea(ServerLevel level, BlockPos startPos, Direction facing, int areaSize) {
-        Direction safeFacing = Objects.requireNonNull(facing);
-        BlockPos safeStartPos = Objects.requireNonNull(startPos);
-        Direction leftDir = Objects.requireNonNull(safeFacing.getCounterClockWise());
-        // 检查
-        for (int r = 0; r < areaSize; r++) {
-            for (int c = 0; c < areaSize; c++) {
-                BlockPos p = Objects.requireNonNull(safeStartPos.relative(leftDir, c).relative(safeFacing, r));
-                if (!canBeFarmland(level, p)) return false;
-                BlockPos above = Objects.requireNonNull(p.above());
-                if (!level.isEmptyBlock(above) && !isReplaceable(level.getBlockState(above))) return false;
-            }
-        }
-        // 清理
-        for (int r = 0; r < areaSize; r++) {
-            for (int c = 0; c < areaSize; c++) {
-                BlockPos p = Objects.requireNonNull(safeStartPos.relative(leftDir, c).relative(safeFacing, r));
-                level.setBlock(p, Objects.requireNonNull(Blocks.DIRT.defaultBlockState()), 3);
-                for (int y = p.getY() + 1; y < level.getMaxBuildHeight(); y++) {
-                    BlockPos cp = Objects.requireNonNull(new BlockPos(p.getX(), y, p.getZ()));
-                    if (level.isEmptyBlock(cp)) break;
-                    level.destroyBlock(cp, true);
-                }
-            }
-        }
-        return true;
-    }
-
-    private static boolean executeInitialPlanting(ServerLevel level, BlockPos startPos, Direction facing, int areaSize, String crop, BlockPos chestPos, ItemStack seeds) {
-        Direction safeFacing = Objects.requireNonNull(facing);
-        BlockPos safeStartPos = Objects.requireNonNull(startPos);
-        Direction leftDir = Objects.requireNonNull(safeFacing.getCounterClockWise());
-        Block cropBlock = Objects.requireNonNull(getCropBlock(crop));
-        int planted = 0;
-
-        for (int r = 0; r < areaSize; r++) {
-            for (int c = 0; c < areaSize; c++) {
-                BlockPos p = Objects.requireNonNull(safeStartPos.relative(leftDir, c).relative(safeFacing, r));
-                level.setBlock(
-                        p,
-                        Objects.requireNonNull(
-                                Objects.requireNonNull(Blocks.FARMLAND.defaultBlockState())
-                                        .setValue(Objects.requireNonNull(FarmBlock.MOISTURE), 7)
-                        ),
-                        3
-                );
-                
-                if (shouldPlantAt(crop, r, c)) {
-                    BlockPos cp = Objects.requireNonNull(p.above());
-                    if (ContainerUtils.consumeItem(level, chestPos, seeds)) {
-                        level.setBlock(cp, Objects.requireNonNull(cropBlock.defaultBlockState()), 3);
-                        planted++;
-                    }
-                }
-                // 水源放置逻辑 (简化)
-                if ((r == 0 || r == areaSize - 1 || c == 0 || c == areaSize - 1) && (r % 4 == 0 && c % 4 == 0)) {
-                    Direction clockwiseFacing = Objects.requireNonNull(safeFacing.getClockWise());
-                    BlockPos wp = Objects.requireNonNull(p.relative(clockwiseFacing).relative(safeFacing));
-                    if (level.isEmptyBlock(wp)) level.setBlock(wp, Objects.requireNonNull(Blocks.WATER.defaultBlockState()), 3);
-                }
-            }
-        }
-        return planted > 0;
-    }
-
     private static boolean canBeFarmland(ServerLevel level, BlockPos pos) {
         BlockState s = level.getBlockState(Objects.requireNonNull(pos));
         return s.is(Objects.requireNonNull(Blocks.DIRT))
@@ -385,39 +319,6 @@ public final class FarmlandManager {
 
     private static boolean isReplaceable(BlockState s) {
         return s.isAir() || s.canBeReplaced();
-    }
-
-    private static boolean shouldPlantAt(String crop, int row, int col) {
-        if ("melon".equals(crop) || "pumpkin".equals(crop)) return (row % 2 == 0) && (col % 2 == 0);
-        return true;
-    }
-
-    private static int countPlannedPlantingSlots(int size, String crop) {
-        int count = 0;
-        for (int r = 0; r < size; r++) {
-            for (int c = 0; c < size; c++) if (shouldPlantAt(crop, r, c)) count++;
-        }
-        return count;
-    }
-
-    private static Block getCropBlock(String crop) {
-        return switch (crop) {
-            case "potato" -> Blocks.POTATOES;
-            case "carrot" -> Blocks.CARROTS;
-            case "melon" -> Blocks.MELON_STEM;
-            case "pumpkin" -> Blocks.PUMPKIN_STEM;
-            default -> Blocks.WHEAT;
-        };
-    }
-
-    private static ItemStack getSeedsForCrop(String crop) {
-        return switch (crop) {
-            case "potato" -> new ItemStack(Objects.requireNonNull(Items.POTATO));
-            case "carrot" -> new ItemStack(Objects.requireNonNull(Items.CARROT));
-            case "melon" -> new ItemStack(Objects.requireNonNull(Items.MELON_SEEDS));
-            case "pumpkin" -> new ItemStack(Objects.requireNonNull(Items.PUMPKIN_SEEDS));
-            default -> new ItemStack(Objects.requireNonNull(Items.WHEAT_SEEDS));
-        };
     }
 
     private static UUID getFarmlandBoxCityId(MinecraftServer server, BlockPos pos) {

@@ -24,6 +24,7 @@ import javax.annotation.Nullable;
 import java.util.Objects;
 import java.util.UUID;
 
+@SuppressWarnings("null")
 public class FarmlandBoxScreen extends Screen {
     private final BlockPos farmlandBoxPos;
     private Button hireFarmerButton;

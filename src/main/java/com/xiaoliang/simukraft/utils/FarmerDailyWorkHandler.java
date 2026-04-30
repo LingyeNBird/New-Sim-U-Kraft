@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+@SuppressWarnings("null")
 public class FarmerDailyWorkHandler {
     private static boolean dataInitialized = false;
 
@@ -462,13 +463,11 @@ public class FarmerDailyWorkHandler {
         FarmlandPlot plot = getManagedPlot(farmlandBoxPos);
         if (plot == null || farmlandBoxPos == null || level == null || npc == null) return false;
 
-        int farmlandMoistened = 0;
         for (BlockPos pos : plot.positions()) {
             BlockState state = level.getBlockState(pos);
             if (state.getBlock() == Blocks.FARMLAND) {
                 BlockState moistState = Objects.requireNonNull(state.setValue(Objects.requireNonNull(FarmBlock.MOISTURE), 7));
                 level.setBlock(pos, moistState, 3);
-                farmlandMoistened++;
             }
         }
         return true;
@@ -478,13 +477,11 @@ public class FarmerDailyWorkHandler {
         ManagedCropContext context = getManagedCropContext(farmlandBoxPos);
         if (context == null || level == null || npc == null || !ServerConfig.isFarmerCropGrowthBoostEnabled()) return false;
 
-        int cropsBoosted = 0;
         for (BlockPos farmlandPos : context.plot.positions()) {
             if (!context.plot.shouldPlantAt(farmlandPos, context.definition.layoutType())) continue;
             BlockPos cropPos = farmlandPos.above();
             BlockState state = level.getBlockState(cropPos);
             if (state.getBlock() == context.definition.cropBlock() && boostCropState(level, cropPos, state)) {
-                cropsBoosted++;
             }
         }
         return true;
@@ -500,19 +497,16 @@ public class FarmerDailyWorkHandler {
         }
 
         int npcLevel = NPCDataManager.getNPCLevel(level.getServer(), npc.getUUID());
-        int cropsHarvested = 0;
         for (BlockPos farmlandPos : context.plot.positions()) {
             if (!context.plot.shouldPlantAt(farmlandPos, context.definition.layoutType())) continue;
             BlockPos cropPos = farmlandPos.above();
             BlockState state = level.getBlockState(cropPos);
             if (state.getBlock() == context.definition.cropBlock() && isManagedCropMature(state, context.definition)) {
                 if (harvestCrop(level, cropPos, state, boundChestPos, npcLevel)) {
-                    cropsHarvested++;
                     replantManagedCrop(level, cropPos, context.definition, boundChestPos);
                 }
             }
             if (context.definition.layoutType() == CropLayoutType.CHECKERBOARD) {
-                cropsHarvested += harvestManagedStemFruits(level, farmlandPos, context.definition, boundChestPos, npcLevel);
             }
         }
         return true;
@@ -557,27 +551,6 @@ public class FarmerDailyWorkHandler {
         if (!ContainerUtils.consumeItem(level, chestPos, new ItemStack(definition.seedItem()))) return false;
         level.setBlock(Objects.requireNonNull(cropPos), Objects.requireNonNull(definition.cropBlock().defaultBlockState()), 3);
         return true;
-    }
-
-    private static int harvestManagedStemFruits(ServerLevel level, BlockPos stemFarmlandPos, CropDefinition definition, BlockPos chestPos, int npcLevel) {
-        Block fruitBlock = getFruitBlockForStem(definition.cropBlock());
-        if (fruitBlock == null) return 0;
-
-        int harvested = 0;
-        for (net.minecraft.core.Direction direction : net.minecraft.core.Direction.Plane.HORIZONTAL) {
-            BlockPos fruitPos = stemFarmlandPos.above().relative(direction);
-            BlockState fruitState = level.getBlockState(fruitPos);
-            if (fruitState.getBlock() == fruitBlock && harvestCrop(level, fruitPos, fruitState, chestPos, npcLevel)) {
-                harvested++;
-            }
-        }
-        return harvested;
-    }
-
-    private static Block getFruitBlockForStem(Block stemBlock) {
-        if (stemBlock == Blocks.MELON_STEM) return Blocks.MELON;
-        if (stemBlock == Blocks.PUMPKIN_STEM) return Blocks.PUMPKIN;
-        return null;
     }
 
     /**

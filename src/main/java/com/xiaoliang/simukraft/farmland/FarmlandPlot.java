@@ -8,6 +8,11 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
+/**
+ * 农田盒区域
+ * 用于表示农田盒的区域范围，包括最小和最大位置
+ */
+@SuppressWarnings("null")
 public record FarmlandPlot(BlockPos minPos, BlockPos maxPos) {
     public FarmlandPlot {
         Objects.requireNonNull(minPos);

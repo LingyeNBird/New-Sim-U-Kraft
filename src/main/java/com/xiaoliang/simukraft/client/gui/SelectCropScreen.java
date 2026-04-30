@@ -14,6 +14,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
+@SuppressWarnings("null")
 public class SelectCropScreen extends Screen {
     private static final int PAGE_SIZE = 8;
     private final BlockPos farmlandBoxPos;

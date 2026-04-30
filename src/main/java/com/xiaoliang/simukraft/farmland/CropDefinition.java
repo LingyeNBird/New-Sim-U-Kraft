@@ -7,6 +7,11 @@ import net.minecraft.world.level.block.Block;
 
 import java.util.Objects;
 
+/**
+ * 作物定义
+ * 用于表示作物的种子、作物块、布局类型和显示名称
+ */
+@SuppressWarnings("null")
 public record CropDefinition(
         String selectionId,
         Item seedItem,

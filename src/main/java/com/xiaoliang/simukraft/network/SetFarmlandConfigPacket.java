@@ -14,6 +14,7 @@ import java.util.function.Supplier;
  * 设置农田盒配置数据包
  * 用于将客户端的作物选择和区域选择同步到服务器
  */
+@SuppressWarnings("null")
 public class SetFarmlandConfigPacket {
     private final BlockPos farmlandBoxPos;
     private final String crop;

@@ -17,6 +17,7 @@ import java.util.function.Supplier;
  * 同步农田盒数据包
  * 用于从服务器同步农田盒的雇佣数据、作物选择和区域大小到客户端
  */
+@SuppressWarnings("null")
 public class SyncFarmlandDataPacket {
     // 客户端 -> 服务器：请求同步指定农田盒的数据
     public static class Request {

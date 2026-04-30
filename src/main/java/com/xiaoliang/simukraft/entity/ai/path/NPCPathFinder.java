@@ -708,13 +708,6 @@ public class NPCPathFinder {
         return from.distanceTo(to);
     }
 
-    private double calculateHeuristic(BlockPos from, BlockPos to) {
-        double dx = from.getX() - to.getX();
-        double dy = from.getY() - to.getY();
-        double dz = from.getZ() - to.getZ();
-        return Math.sqrt(dx * dx + dy * dy + dz * dz);
-    }
-
     private double calculateMoveCost(NPCPathNode from, NPCPathNode to) {
         double baseCost = from.distanceTo(to);
         boolean diagonal = from.x != to.x && from.z != to.z;

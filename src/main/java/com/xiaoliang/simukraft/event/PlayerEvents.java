@@ -1,6 +1,7 @@
 package com.xiaoliang.simukraft.event;
 
 import com.xiaoliang.simukraft.Simukraft;
+import com.xiaoliang.simukraft.init.ModItems;
 import com.xiaoliang.simukraft.init.ModSoundEvents;
 import com.xiaoliang.simukraft.entity.CustomEntity;
 import com.xiaoliang.simukraft.network.NetworkManager;
@@ -19,6 +20,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
@@ -56,6 +58,9 @@ public class PlayerEvents {
                 try {
                     // 移除模式选择书发放逻辑，直接跳过模式选择检查
                     MessageUtils.sendModeSelectedMessages(player);
+                    
+                    // menglannnn: 首次加入给予指南书
+                    giveGuideBookToPlayer(player);
 
                     ServerTickHandler.scheduleDelayedNPCProcessing(player, 100);
                     
@@ -208,6 +213,30 @@ public class PlayerEvents {
     private record FirstDreamPendingState(FirstDreamStage stage, int remainingTicks) {
         private FirstDreamPendingState withRemainingTicks(int updatedTicks) {
             return new FirstDreamPendingState(stage, updatedTicks);
+        }
+    }
+    
+    /**
+     * menglannnn: 给予玩家指南书（首次加入时）
+     */
+    private static void giveGuideBookToPlayer(ServerPlayer player) {
+        // 检查玩家是否已经有指南书
+        boolean hasGuideBook = player.getInventory().contains(ModItems.GUIDE_BOOK.get().getDefaultInstance());
+        if (hasGuideBook) {
+            return;
+        }
+        
+        // 创建指南书物品
+        ItemStack guideBook = new ItemStack(ModItems.GUIDE_BOOK.get());
+        
+        // 尝试添加到背包
+        boolean added = player.getInventory().add(guideBook);
+        if (added) {
+            //LOGGER.info("[PlayerEvents] 已给予玩家 {} 指南书", player.getName().getString());
+        } else {
+            // 背包满了，掉在玩家位置
+            player.drop(guideBook, false);
+            //LOGGER.warn("[PlayerEvents] 玩家 {} 背包已满，指南书掉落在地", player.getName().getString());
         }
     }
 }

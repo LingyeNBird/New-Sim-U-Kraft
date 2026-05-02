@@ -112,6 +112,16 @@
           "type": "text",
           "content": "guidebook.chapter.items.farmland_box",
           "spacing": 8
+        },
+        {
+          "type": "item",
+          "spacing": 4,
+          "item_id": "simukraft:manifest"
+        },
+        {
+          "type": "text",
+          "spacing": 4,
+          "content": "guidebook.chapter.items.page2_left_el4"
         }
       ],
       "right_content": [

@@ -464,11 +464,11 @@ public class ContainerUtils {
         Optional<IItemHandler> cap = blockEntity.getCapability(ForgeCapabilities.ITEM_HANDLER).resolve();
         if (cap.isPresent()) {
             IItemHandler handler = cap.get();
-            LOGGER.debug("[ContainerUtils] 容器 {} 有 {} 个槽位", safePos, handler.getSlots());
+            //LOGGER.debug("[ContainerUtils] 容器 {} 有 {} 个槽位", safePos, handler.getSlots());
             for (int i = 0; i < handler.getSlots(); i++) {
                 ItemStack stack = handler.getStackInSlot(i);
                 if (!stack.isEmpty()) {
-                    LOGGER.debug("[ContainerUtils] 槽位 {}: {} x {}", i, stack.getItem(), stack.getCount());
+                    //LOGGER.debug("[ContainerUtils] 槽位 {}: {} x {}", i, stack.getItem(), stack.getCount());
                     rawItems.add(stack.copy());
                 }
             }
@@ -478,11 +478,11 @@ public class ContainerUtils {
         
         // 回退到 Container 接口
         if (blockEntity instanceof Container container) {
-            LOGGER.debug("[ContainerUtils] 容器 {} 使用 Container 接口，有 {} 个槽位", safePos, container.getContainerSize());
+            //LOGGER.debug("[ContainerUtils] 容器 {} 使用 Container 接口，有 {} 个槽位", safePos, container.getContainerSize());
             for (int i = 0; i < container.getContainerSize(); i++) {
                 ItemStack stack = container.getItem(i);
                 if (!stack.isEmpty()) {
-                    LOGGER.debug("[ContainerUtils] 槽位 {}: {} x {}", i, stack.getItem(), stack.getCount());
+                    //LOGGER.debug("[ContainerUtils] 槽位 {}: {} x {}", i, stack.getItem(), stack.getCount());
                     rawItems.add(stack.copy());
                 }
             }
@@ -510,8 +510,8 @@ public class ContainerUtils {
                     // 可以堆叠，增加数量
                     mergedItem.grow(item.getCount());
                     found = true;
-                    LOGGER.debug("[ContainerUtils] 合并物品: {} x {} -> 新数量 {}", 
-                        item.getItem(), item.getCount(), mergedItem.getCount());
+                    //LOGGER.debug("[ContainerUtils] 合并物品: {} x {} -> 新数量 {}", 
+                        //    item.getItem(), item.getCount(), mergedItem.getCount());
                     break;
                 }
             }

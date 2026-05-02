@@ -8,6 +8,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.FenceGateBlock;
 import net.minecraft.world.level.block.LadderBlock;
@@ -195,6 +196,11 @@ public class NPCMoveController {
             return;
         }
         
+        // menglannnn: 运行时危险检测 - 如果NPC当前位置有危险，立即停止并重新寻路
+        if (checkAndHandleDanger()) {
+            return;
+        }
+        
         // 检查路径是否完成
         if (currentPath.isCompleted()) {
             stop();
@@ -204,6 +210,14 @@ public class NPCMoveController {
         // 获取当前目标节点
         NPCPathNode targetNode = currentPath.getCurrentNode();
         if (targetNode == null) {
+            stop();
+            return;
+        }
+        
+        // menglannnn: 检查目标节点是否安全
+        if (isDangerousPosition(targetNode.pos)) {
+            Simukraft.LOGGER.warn("[NPCMoveController] NPC {} 路径目标节点 {} 检测到危险，停止移动", 
+                npc.getFullName(), targetNode.pos);
             stop();
             return;
         }
@@ -1668,5 +1682,177 @@ public class NPCMoveController {
     public double getDistanceToTarget() {
         if (currentPath == null) return 0;
         return currentPath.getRemainingLength();
+    }
+    
+    /**
+     * menglannnn: 检测方块是否为危险方块
+     */
+    private boolean isDangerousBlock(BlockState state) {
+        Block block = state.getBlock();
+        return block == Blocks.LAVA
+            || block == Blocks.FIRE
+            || block == Blocks.SOUL_FIRE
+            || block == Blocks.CACTUS
+            || block == Blocks.SWEET_BERRY_BUSH
+            || block == Blocks.MAGMA_BLOCK
+            || block == Blocks.POWDER_SNOW
+            || block == Blocks.CAMPFIRE
+            || block == Blocks.SOUL_CAMPFIRE
+            || block == Blocks.LAVA_CAULDRON
+            // 伤害性植物
+            || block == Blocks.WITHER_ROSE
+            || block == Blocks.DEAD_BUSH
+            // 爆炸物
+            || block == Blocks.TNT
+            // 危险方块
+            || block == Blocks.END_PORTAL
+            || block == Blocks.END_GATEWAY
+            || block == Blocks.NETHER_PORTAL
+            || block == Blocks.VOID_AIR
+            // 伤害性装置
+            || block == Blocks.DISPENSER
+            // 窒息方块
+            || block == Blocks.SAND
+            || block == Blocks.GRAVEL
+            // 伤害性环境
+            || block == Blocks.BUBBLE_COLUMN
+            || block == Blocks.BIG_DRIPLEAF
+            // 陷阱
+            || block == Blocks.TRIPWIRE
+            || block == Blocks.TRIPWIRE_HOOK;
+    }
+    
+    /**
+     * menglannnn: 检测位置是否为危险位置
+     */
+    private boolean isDangerousPosition(BlockPos pos) {
+        return isDangerousBlock(level.getBlockState(pos)) 
+            || isDangerousBlock(level.getBlockState(pos.above()))
+            || isDangerousBlock(level.getBlockState(pos.below()));
+    }
+    
+    /**
+     * menglannnn: 运行时危险检测与处理
+     * 如果NPC当前处于危险位置，返回true表示已处理
+     */
+    private boolean checkAndHandleDanger() {
+        BlockPos footPos = npc.blockPosition();
+        BlockPos headPos = footPos.above();
+        
+        // 检查脚部位置
+        if (isDangerousBlock(level.getBlockState(footPos))) {
+            Simukraft.LOGGER.warn("[NPCMoveController] NPC {} 脚部检测到危险方块 {}，执行紧急避让", 
+                npc.getFullName(), level.getBlockState(footPos).getBlock());
+            handleDangerEscape(footPos);
+            return true;
+        }
+        
+        // 检查头部位置
+        if (isDangerousBlock(level.getBlockState(headPos))) {
+            Simukraft.LOGGER.warn("[NPCMoveController] NPC {} 头部检测到危险方块 {}，执行紧急避让", 
+                npc.getFullName(), level.getBlockState(headPos).getBlock());
+            handleDangerEscape(headPos);
+            return true;
+        }
+        
+        // 检查下方（岩浆等）
+        BlockPos belowPos = footPos.below();
+        BlockState belowState = level.getBlockState(belowPos);
+        if (belowState.getBlock() == Blocks.LAVA) {
+            Simukraft.LOGGER.warn("[NPCMoveController] NPC {} 下方检测到岩浆，执行紧急避让", npc.getFullName());
+            handleDangerEscape(belowPos);
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * menglannnn: 危险逃离处理
+     */
+    private void handleDangerEscape(BlockPos dangerPos) {
+        // 停止当前移动
+        stop();
+        
+        // 尝试向安全方向移动
+        Vec3 escapeDir = findEscapeDirection(dangerPos);
+        if (escapeDir != null) {
+            Vec3 escapeTarget = npc.position().add(escapeDir.scale(2.0D));
+            BlockPos escapePos = BlockPos.containing(escapeTarget);
+            
+            // 检查目标位置是否安全
+            if (!isDangerousPosition(escapePos) && !isDangerousPosition(escapePos.above())) {
+                npc.getMoveControl().setWantedPosition(escapeTarget.x, escapeTarget.y, escapeTarget.z, 1.0D);
+                Simukraft.LOGGER.info("[NPCMoveController] NPC {} 向安全方向逃离: {}", 
+                    npc.getFullName(), escapePos);
+            }
+        }
+        
+        // 如果是岩浆，尝试跳跃
+        if (level.getBlockState(dangerPos).getBlock() == Blocks.LAVA ||
+            level.getBlockState(dangerPos.below()).getBlock() == Blocks.LAVA) {
+            if (npc.onGround()) {
+                npc.getJumpControl().jump();
+            }
+        }
+    }
+    
+    /**
+     * menglannnn: 寻找逃离危险的方向
+     */
+    private Vec3 findEscapeDirection(BlockPos dangerPos) {
+        Vec3 npcPos = npc.position();
+        Vec3 dangerVec = Vec3.atCenterOf(dangerPos);
+        Vec3 awayDir = npcPos.subtract(dangerVec).normalize();
+        
+        // 如果方向为零向量，随机选择一个方向
+        if (awayDir.lengthSqr() < 0.001D) {
+            awayDir = new Vec3(1, 0, 0);
+        }
+        
+        // 尝试找到最安全的方向
+        Vec3 bestDir = null;
+        double bestSafety = -1;
+        
+        for (int i = 0; i < 8; i++) {
+            double angle = i * Math.PI / 4;
+            Vec3 testDir = new Vec3(
+                awayDir.x * Math.cos(angle) - awayDir.z * Math.sin(angle),
+                0,
+                awayDir.x * Math.sin(angle) + awayDir.z * Math.cos(angle)
+            );
+            
+            double safety = calculateSafetyScore(npcPos.add(testDir.scale(2.0D)));
+            if (safety > bestSafety) {
+                bestSafety = safety;
+                bestDir = testDir;
+            }
+        }
+        
+        return bestDir;
+    }
+    
+    /**
+     * menglannnn: 计算位置的安全分数（越高越安全）
+     */
+    private double calculateSafetyScore(Vec3 pos) {
+        BlockPos blockPos = BlockPos.containing(pos);
+        double score = 100.0D;
+        
+        // 检查周围危险方块
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                for (int dy = -1; dy <= 2; dy++) {
+                    BlockPos checkPos = blockPos.offset(dx, dy, dz);
+                    BlockState state = level.getBlockState(checkPos);
+                    if (isDangerousBlock(state)) {
+                        double dist = pos.distanceTo(Vec3.atCenterOf(checkPos));
+                        score -= 50.0D / (dist + 0.1D);
+                    }
+                }
+            }
+        }
+        
+        return score;
     }
 }

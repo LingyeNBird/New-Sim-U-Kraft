@@ -36,7 +36,10 @@ public class NPCPathFinder {
     private static final double COST_FALL = 1.35D;
     private static final double COST_CLIMB = 1.0D;
     private static final double COST_DOOR = 1.15D;
-    private static final double COST_DANGER = 50.0D;
+    private static final double COST_DANGER = 100.0D;
+    private static final double COST_DANGER_NEARBY = 30.0D;
+    private static final double COST_DANGER_ADJACENT = 15.0D;
+    private static final int DANGER_CHECK_RADIUS = 2;
     private static final double WALK_STEP_HEIGHT = 12.0D / 16.0D;
     private static final double MAX_ASCEND_HEIGHT = 19.0D / 16.0D;
     private static final double COLLISION_EPSILON = 1.0E-5D;
@@ -405,10 +408,26 @@ public class NPCPathFinder {
         }
     }
 
+    /**
+     * menglannnn: 检测节点是否可站立（包含危险区域检查）
+     */
     private boolean isSurfaceNodeStandable(NPCPathNode node) {
-        if (isDangerous(level.getBlockState(node.pos)) || isDangerous(level.getBlockState(node.pos.above())) || isDangerous(level.getBlockState(node.pos.below()))) {
+        // 严格检查：节点位置、上方、下方都不能有危险方块
+        if (isDangerous(level.getBlockState(node.pos)) || 
+            isDangerous(level.getBlockState(node.pos.above())) || 
+            isDangerous(level.getBlockState(node.pos.below()))) {
             return false;
         }
+        
+        // 检查周围是否有危险区域（防止太靠近岩浆等）
+        if (isDangerousArea(node.pos)) {
+            // 如果正下方是岩浆，绝对不允许站立
+            BlockState belowState = level.getBlockState(node.pos.below());
+            if (belowState.getBlock() == Blocks.LAVA) {
+                return false;
+            }
+        }
+        
         return hasHeadroomAt(node.pos, node.standX, node.standY, node.standZ);
     }
 
@@ -675,9 +694,107 @@ public class NPCPathFinder {
         return block instanceof LadderBlock || block instanceof VineBlock || block == Blocks.VINE;
     }
 
+    /**
+     * menglannnn: 检测方块是否为危险方块
+     */
     private boolean isDangerous(BlockState state) {
         Block block = state.getBlock();
-        return block == Blocks.LAVA || block == Blocks.FIRE || block == Blocks.SOUL_FIRE || block == Blocks.CACTUS || block == Blocks.SWEET_BERRY_BUSH || block == Blocks.MAGMA_BLOCK || block == Blocks.POWDER_SNOW;
+        return block == Blocks.LAVA
+            || block == Blocks.FIRE
+            || block == Blocks.SOUL_FIRE
+            || block == Blocks.CACTUS
+            || block == Blocks.SWEET_BERRY_BUSH
+            || block == Blocks.MAGMA_BLOCK
+            || block == Blocks.POWDER_SNOW
+            || block == Blocks.CAMPFIRE
+            || block == Blocks.SOUL_CAMPFIRE
+            || block == Blocks.LAVA_CAULDRON
+            // 伤害性植物
+            || block == Blocks.WITHER_ROSE
+            || block == Blocks.DEAD_BUSH
+            // 爆炸物
+            || block == Blocks.TNT
+            // 危险方块
+            || block == Blocks.END_PORTAL
+            || block == Blocks.END_GATEWAY
+            || block == Blocks.NETHER_PORTAL
+            || block == Blocks.VOID_AIR
+            // 窒息方块
+            || block == Blocks.SAND
+            || block == Blocks.GRAVEL
+            // 伤害性环境
+            || block == Blocks.BUBBLE_COLUMN
+            || block == Blocks.BIG_DRIPLEAF;
+    }
+
+    /**
+     * menglannnn: 检测位置是否为危险区域（包括周围）
+     */
+    private boolean isDangerousArea(BlockPos pos) {
+        // 检查节点本身及周围
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    BlockPos checkPos = pos.offset(dx, dy, dz);
+                    BlockState state = level.getBlockState(checkPos);
+                    if (isDangerous(state)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * menglannnn: 计算位置的危险代价（距离越近代价越高）
+     */
+    private double calculateDangerCost(BlockPos pos) {
+        double cost = 0.0D;
+        
+        // 检查节点正下方
+        BlockState belowState = level.getBlockState(pos.below());
+        if (isDangerous(belowState)) {
+            return COST_DANGER;
+        }
+        
+        // 检查节点位置
+        BlockState footState = level.getBlockState(pos);
+        if (isDangerous(footState)) {
+            return COST_DANGER;
+        }
+        
+        // 检查头部位置
+        BlockState headState = level.getBlockState(pos.above());
+        if (isDangerous(headState)) {
+            cost += COST_DANGER * 0.8D;
+        }
+        
+        // 检查周围区域（距离1）
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                if (dx == 0 && dz == 0) continue;
+                BlockPos nearbyPos = pos.offset(dx, 0, dz);
+                if (isDangerous(level.getBlockState(nearbyPos)) || 
+                    isDangerous(level.getBlockState(nearbyPos.below()))) {
+                    cost += COST_DANGER_ADJACENT;
+                }
+            }
+        }
+        
+        // 检查更远区域（距离2）
+        for (int dx = -DANGER_CHECK_RADIUS; dx <= DANGER_CHECK_RADIUS; dx++) {
+            for (int dz = -DANGER_CHECK_RADIUS; dz <= DANGER_CHECK_RADIUS; dz++) {
+                if (Math.abs(dx) <= 1 && Math.abs(dz) <= 1) continue;
+                BlockPos nearbyPos = pos.offset(dx, 0, dz);
+                if (isDangerous(level.getBlockState(nearbyPos)) || 
+                    isDangerous(level.getBlockState(nearbyPos.below()))) {
+                    cost += COST_DANGER_NEARBY / (Math.abs(dx) + Math.abs(dz));
+                }
+            }
+        }
+        
+        return cost;
     }
 
     private BlockPos findAlternativeEndPoint(BlockPos target) {
@@ -708,6 +825,9 @@ public class NPCPathFinder {
         return from.distanceTo(to);
     }
 
+    /**
+     * menglannnn: 计算移动代价（包含危险区域避让）
+     */
     private double calculateMoveCost(NPCPathNode from, NPCPathNode to) {
         double baseCost = from.distanceTo(to);
         boolean diagonal = from.x != to.x && from.z != to.z;
@@ -729,9 +849,11 @@ public class NPCPathFinder {
             default:
                 break;
         }
-        if (isDangerous(level.getBlockState(to.pos.below()))) {
-            cost += COST_DANGER;
-        }
+        
+        // 使用新的危险代价计算
+        double dangerCost = calculateDangerCost(to.pos);
+        cost += dangerCost;
+        
         return cost;
     }
 

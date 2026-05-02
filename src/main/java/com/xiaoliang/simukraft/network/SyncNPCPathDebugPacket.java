@@ -1,6 +1,5 @@
 package com.xiaoliang.simukraft.network;
 
-import com.xiaoliang.simukraft.Simukraft;
 import com.xiaoliang.simukraft.client.gui.NPCPathDebugClientCache;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.phys.Vec3;
@@ -73,7 +72,7 @@ public class SyncNPCPathDebugPacket {
             } else {
                 NPCPathDebugClientCache.updatePath(npcUuid, currentIndex, nodes, nodeTypes, blocked);
             }
-            Simukraft.LOGGER.info("[SyncNPCPathDebugPacket] 客户端收到NPC路径调试数据: npc={}, clear={}, blocked={}, nodes={}", npcUuid, clear, blocked, nodes.size());
+            //Simukraft.LOGGER.info("[SyncNPCPathDebugPacket] 客户端收到NPC路径调试数据: npc={}, clear={}, blocked={}, nodes={}", npcUuid, clear, blocked, nodes.size());
         });
         ctx.get().setPacketHandled(true);
     }

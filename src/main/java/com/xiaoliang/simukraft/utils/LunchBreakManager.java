@@ -20,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * NPC午休管理器（menglannnn: 完全仿造休息的写法）
- * 午休时间：6000-8000 tick（中午12:00-16:00，游戏时间约12分钟）
+ * 午休时间：6000-7000 tick（中午12:00-15:00，游戏时间约1分钟）
  * 午休期间NPC可以闲逛或去购买食物
  *
  * 午休规则：
@@ -36,7 +36,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class LunchBreakManager {
 
     public static final int LUNCH_BREAK_START = 6000;
-    public static final int LUNCH_BREAK_END = 8000;
+    public static final int LUNCH_BREAK_END = 7000;
 
     private static final Set<String> FIXED_LUNCH_BREAK_JOBS = Set.of(
         "farmer",

@@ -51,13 +51,20 @@ public class BlockReplacementScreen extends Screen {
 
     // 等待服务器响应的标志
     private boolean waitingForChestData = true;
+    // menglannnn: 父界面引用，用于取消时返回
+    private final Screen parentScreen;
 
     public BlockReplacementScreen(BlockPos selectionStart, BlockPos selectionEnd, BlockPos chestPos, BlockPos buildBoxPos) {
+        this(selectionStart, selectionEnd, chestPos, buildBoxPos, null);
+    }
+
+    public BlockReplacementScreen(BlockPos selectionStart, BlockPos selectionEnd, BlockPos chestPos, BlockPos buildBoxPos, Screen parentScreen) {
         super(Component.translatable("gui.block_replacement.title"));
         this.selectionStart = selectionStart;
         this.selectionEnd = selectionEnd;
         this.chestPos = chestPos;
         this.buildBoxPos = buildBoxPos;
+        this.parentScreen = parentScreen;
     }
 
     @Override
@@ -84,10 +91,16 @@ public class BlockReplacementScreen extends Screen {
                 .bounds(centerX - 100, this.height - 35, 90, 22)
                 .build());
 
-        // 取消按钮 - 白色文本
+        // 取消按钮 - 白色文本（menglannnn: 如果有父界面则返回父界面，否则关闭）
         this.addRenderableWidget(Button.builder(
                         Component.translatable("gui.button.cancel"),
-                        button -> this.onClose())
+                        button -> {
+                            if (parentScreen != null) {
+                                Minecraft.getInstance().setScreen(parentScreen);
+                            } else {
+                                this.onClose();
+                            }
+                        })
                 .bounds(centerX + 10, this.height - 35, 90, 22)
                 .build());
 

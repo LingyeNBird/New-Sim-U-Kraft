@@ -898,6 +898,30 @@ public class CustomEntity extends PathfinderMob {
                             BlockPos targetPos = blockInfo.pos();
                             BlockState targetState = blockInfo.state();
 
+                            // menglannnn: 处理空气方块（用于拆除/替换已有方块）
+                            if (targetState.isAir()) {
+                                // 目标为空气，移除该位置的方块
+                                BlockState currentState = serverLevel.getBlockState(targetPos);
+                                if (!currentState.isAir()) {
+                                    // 检查是否在黑名单中（menglannnn: 黑名单方块不应被拆除）
+                                    ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(currentState.getBlock());
+                                    if (blockId != null && ServerConfig.isBlockBlacklistedForConstruction(blockId.toString())) {
+                                        if (ServerConfig.shouldLogSkippedBlocks()) {
+                                            Simukraft.LOGGER.info("[CustomEntity] Blacklisted block encountered during air placement, keeping original and skipping pos {}: {}", targetPos, blockId);
+                                        }
+                                        placedBlock = true;
+                                        buildCooldownTicks = 0;
+                                        constructionProgress = constructionTask.getProgress();
+                                        continue;
+                                    }
+                                    serverLevel.destroyBlock(targetPos, false);
+                                }
+                                placedBlock = true;
+                                buildCooldownTicks = 0;
+                                constructionProgress = constructionTask.getProgress();
+                                continue;
+                            }
+
                             // 检查当前位置是否有阻挡方块（非目标方块的其他方块）
                             BlockState currentState = serverLevel.getBlockState(targetPos);
                             if (!currentState.isAir() && currentState.getBlock() != targetState.getBlock()) {

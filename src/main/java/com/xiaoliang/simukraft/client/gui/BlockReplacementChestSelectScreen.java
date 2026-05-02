@@ -180,9 +180,9 @@ public class BlockReplacementChestSelectScreen extends Screen {
                 Minecraft.getInstance().setScreen(new BlockFillScreen(
                         selectionStart, selectionEnd, containerInfo.pos, buildBoxPos));
             } else {
-                // 打开方块替换主界面，传递建筑盒位置
+                // 打开方块替换主界面，传递建筑盒位置和父界面引用（menglannnn: 用于取消时返回）
                 Minecraft.getInstance().setScreen(new BlockReplacementScreen(
-                        selectionStart, selectionEnd, containerInfo.pos, buildBoxPos));
+                        selectionStart, selectionEnd, containerInfo.pos, buildBoxPos, this));
             }
         }
     }

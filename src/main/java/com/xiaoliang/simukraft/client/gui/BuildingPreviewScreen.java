@@ -42,6 +42,11 @@ public class BuildingPreviewScreen extends Screen {
             previewOrigin
         );
 
+        // 设置当前玩家为预览放置者（menglannnn: 用于限制侵入检测仅放置者可见）
+        if (this.minecraft != null && this.minecraft.player != null) {
+            BuildingBoundsRenderer.setPreviewPlayerId(this.minecraft.player.getUUID());
+        }
+
         // 激活自由相机
         FreeCameraManager.activate();
     }
@@ -187,6 +192,9 @@ public class BuildingPreviewScreen extends Screen {
         BuildingPreviewManager.clearPreview();
         FreeCameraManager.deactivate();
 
+        // 清除预览放置者标识（menglannnn: 退出预览后不再显示侵入检测）
+        BuildingBoundsRenderer.setPreviewPlayerId(null);
+
         // 释放鼠标
         if (minecraft != null && mouseGrabbed) {
             minecraft.mouseHandler.releaseMouse();
@@ -222,6 +230,9 @@ public class BuildingPreviewScreen extends Screen {
         // 关闭预览并清除所有界面
         BuildingPreviewManager.clearPreview();
         FreeCameraManager.deactivate();
+
+        // 清除预览放置者标识（menglannnn: 放置完成后不再显示侵入检测）
+        BuildingBoundsRenderer.setPreviewPlayerId(null);
 
         // 释放鼠标
         if (mouseGrabbed) {

@@ -609,10 +609,11 @@ public class ConstructionTask {
         while (hasNextBlock()) {
             BlockInfo next = blocksToPlace.get(currentBlockIndex);
 
-            // 修复：跳过空气方块（NBT文件中的空气方块不需要放置）
+            // menglannnn: 允许放置空气方块（用于拆除/替换已有方块）
+            // 空气方块直接返回，不需要消耗材料
             if (next.state().isAir()) {
                 currentBlockIndex++;
-                continue;
+                return next;
             }
 
             // 修复：在消耗材料之前检查方块是否已经存在

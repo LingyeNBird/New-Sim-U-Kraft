@@ -8,9 +8,12 @@ import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.xiaoliang.simukraft.Simukraft;
 import com.xiaoliang.simukraft.building.PlacedBuildingManager;
+import com.xiaoliang.simukraft.client.preview.BuildingPreviewManager;
+import com.xiaoliang.simukraft.client.preview.SchematicBlockData;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
@@ -20,12 +23,16 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.joml.Matrix4f;
 
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 建筑界限渲染器（menglannnn: 在客户端渲染建筑界限）
- * 建筑界限：白色线条框
+ * 建筑界限渲染器（menglannnn: 在客户端渲染建筑界限和预览侵入检测）
+ * 功能：
+ * 1. 已放置建筑界限：白色线条框
+ * 2. 建造预览时检测与附近建筑界限的侵入关系，以不同颜色高亮显示冲突方块
  */
 @SuppressWarnings("null")
 @OnlyIn(Dist.CLIENT)
@@ -36,6 +43,12 @@ public class BuildingBoundsRenderer {
 
     // 颜色定义 (ARGB)
     private static final int COLOR_BUILDING_BOUNDS = 0xFFFFFFFF; // 白色
+    private static final int COLOR_INTRUSION_AIR = 0x60FFFF00;   // 半透明黄色（侵入空气）
+    private static final int COLOR_INTRUSION_BLOCK = 0x60FF0000; // 半透明红色（侵入方块）
+    private static final int COLOR_INTRUSION_SAME = 0x60FF8000;  // 半透明橙色（同种类方块）
+
+    // 预览侵入检测开关（仅放置者可见）
+    private static UUID previewPlayerId = null;
 
     /**
      * 设置建筑界限显示状态
@@ -61,6 +74,21 @@ public class BuildingBoundsRenderer {
     }
 
     /**
+     * 设置当前正在放置预览的玩家ID（menglannnn: 用于限制侵入检测仅放置者可见）
+     * @param playerId 玩家UUID，null表示没有玩家正在放置
+     */
+    public static void setPreviewPlayerId(UUID playerId) {
+        previewPlayerId = playerId;
+    }
+
+    /**
+     * 获取当前正在放置预览的玩家ID
+     */
+    public static UUID getPreviewPlayerId() {
+        return previewPlayerId;
+    }
+
+    /**
      * 渲染事件处理
      */
     @SubscribeEvent
@@ -72,17 +100,20 @@ public class BuildingBoundsRenderer {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) return;
 
-        // 检查是否有需要渲染的界限
-        if (buildingBoundsVisible.isEmpty()) {
-            return;
-        }
-
         PoseStack poseStack = event.getPoseStack();
         Vec3 cameraPos = event.getCamera().getPosition();
 
-        // 渲染建筑界限（白色线条）
-        for (BlockPos controlBoxPos : buildingBoundsVisible.keySet()) {
-            renderBuildingBounds(poseStack, cameraPos, controlBoxPos);
+        // 渲染已放置建筑的界限（白色线条）
+        if (!buildingBoundsVisible.isEmpty()) {
+            for (BlockPos controlBoxPos : buildingBoundsVisible.keySet()) {
+                renderBuildingBounds(poseStack, cameraPos, controlBoxPos);
+            }
+        }
+
+        // 渲染预览侵入检测（仅放置者可见）
+        if (BuildingPreviewManager.isPreviewActive() && previewPlayerId != null
+                && mc.player.getUUID().equals(previewPlayerId)) {
+            renderPreviewIntrusions(poseStack, cameraPos, mc);
         }
     }
 
@@ -110,6 +141,165 @@ public class BuildingBoundsRenderer {
 
         // 渲染白色线条框
         renderBoxOutline(poseStack, cameraPos, bounds, COLOR_BUILDING_BOUNDS);
+    }
+
+    /**
+     * 渲染预览图与附近建筑的侵入检测（menglannnn: 检测预览方块是否侵入已有建筑界限）
+     * 仅放置预览图的玩家可见，同时显示被侵入建筑的白色界限框
+     */
+    private static void renderPreviewIntrusions(PoseStack poseStack, Vec3 cameraPos, Minecraft mc) {
+        List<SchematicBlockData> previewBlocks = BuildingPreviewManager.getActiveBlocks();
+        if (previewBlocks.isEmpty()) return;
+
+        // 获取所有已放置的建筑
+        var allBuildings = PlacedBuildingManager.getAllBuildings();
+        if (allBuildings.isEmpty()) return;
+
+        String currentWorldId = mc.level.dimension().location().toString();
+
+        // 记录被侵入的建筑，用于后续渲染界限框（menglannnn: 避免重复渲染同一建筑的界限）
+        java.util.Set<PlacedBuildingManager.PlacedBuildingData> intrudedBuildings = new java.util.HashSet<>();
+
+        for (SchematicBlockData previewBlock : previewBlocks) {
+            BlockPos pos = previewBlock.pos();
+            BlockState previewState = previewBlock.blockState();
+
+            for (PlacedBuildingManager.PlacedBuildingData building : allBuildings) {
+                // 只检测同一世界的建筑
+                if (!building.worldId.equals(currentWorldId)) continue;
+
+                // 检查预览方块是否在该建筑界限内
+                if (isPosInBuildingBounds(pos, building)) {
+                    BlockState worldState = mc.level.getBlockState(pos);
+                    int color;
+
+                    if (worldState.isAir()) {
+                        // 侵入部分是空气 -> 半透明黄色
+                        color = COLOR_INTRUSION_AIR;
+                    } else if (worldState.getBlock() == previewState.getBlock()) {
+                        // 侵入部分是同种类方块 -> 半透明橙色
+                        color = COLOR_INTRUSION_SAME;
+                    } else {
+                        // 侵入部分是其他方块 -> 半透明红色
+                        color = COLOR_INTRUSION_BLOCK;
+                    }
+
+                    // 渲染该位置的半透明方块面
+                    renderIntrusiveBlock(poseStack, cameraPos, pos, color);
+
+                    // 记录被侵入的建筑
+                    intrudedBuildings.add(building);
+                    break; // 找到一个侵入即可，不需要检查其他建筑
+                }
+            }
+        }
+
+        // 渲染所有被侵入建筑的白色界限框（menglannnn: 让玩家清楚看到被侵入的建筑范围）
+        for (PlacedBuildingManager.PlacedBuildingData building : intrudedBuildings) {
+            renderBuildingBoundsForIntrusion(poseStack, cameraPos, building);
+        }
+    }
+
+    /**
+     * 渲染被侵入建筑的界限框（menglannnn: 专用于侵入检测时显示被侵入建筑的范围）
+     */
+    private static void renderBuildingBoundsForIntrusion(PoseStack poseStack, Vec3 cameraPos,
+                                                          PlacedBuildingManager.PlacedBuildingData building) {
+        // 计算建筑边界（相对坐标 + 控制盒位置 = 世界坐标）
+        BlockPos minPos = building.minPos.offset(building.controlBoxPos);
+        BlockPos maxPos = building.maxPos.offset(building.controlBoxPos);
+
+        // 创建AABB
+        AABB bounds = new AABB(
+            minPos.getX(), minPos.getY(), minPos.getZ(),
+            maxPos.getX() + 1, maxPos.getY() + 1, maxPos.getZ() + 1
+        );
+
+        // 渲染白色线条框
+        renderBoxOutline(poseStack, cameraPos, bounds, COLOR_BUILDING_BOUNDS);
+    }
+
+    /**
+     * 检查位置是否在建筑界限内（menglannnn: 包含边界）
+     */
+    private static boolean isPosInBuildingBounds(BlockPos pos, PlacedBuildingManager.PlacedBuildingData building) {
+        BlockPos relPos = pos.subtract(building.controlBoxPos);
+        return relPos.getX() >= building.minPos.getX() && relPos.getX() <= building.maxPos.getX()
+            && relPos.getY() >= building.minPos.getY() && relPos.getY() <= building.maxPos.getY()
+            && relPos.getZ() >= building.minPos.getZ() && relPos.getZ() <= building.maxPos.getZ();
+    }
+
+    /**
+     * 渲染侵入方块的高亮面（menglannnn: 半透明彩色面覆盖在方块上）
+     */
+    private static void renderIntrusiveBlock(PoseStack poseStack, Vec3 cameraPos, BlockPos pos, int color) {
+        RenderSystem.enableDepthTest();
+        RenderSystem.disableCull();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+
+        Tesselator tesselator = Tesselator.getInstance();
+        BufferBuilder buffer = tesselator.getBuilder();
+        buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+
+        float red = ((color >> 16) & 0xFF) / 255.0f;
+        float green = ((color >> 8) & 0xFF) / 255.0f;
+        float blue = (color & 0xFF) / 255.0f;
+        float alpha = ((color >> 24) & 0xFF) / 255.0f;
+
+        double minX = pos.getX() - cameraPos.x;
+        double minY = pos.getY() - cameraPos.y;
+        double minZ = pos.getZ() - cameraPos.z;
+        double maxX = minX + 1.0;
+        double maxY = minY + 1.0;
+        double maxZ = minZ + 1.0;
+
+        Matrix4f matrix = poseStack.last().pose();
+
+        // 六个面
+        // 底面 (Y-)
+        buffer.vertex(matrix, (float)minX, (float)minY, (float)minZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)maxX, (float)minY, (float)minZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)maxX, (float)minY, (float)maxZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)minX, (float)minY, (float)maxZ).color(red, green, blue, alpha).endVertex();
+
+        // 顶面 (Y+)
+        buffer.vertex(matrix, (float)minX, (float)maxY, (float)minZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)minX, (float)maxY, (float)maxZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)maxX, (float)maxY, (float)maxZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)maxX, (float)maxY, (float)minZ).color(red, green, blue, alpha).endVertex();
+
+        // 前面 (Z-)
+        buffer.vertex(matrix, (float)minX, (float)minY, (float)minZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)minX, (float)maxY, (float)minZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)maxX, (float)maxY, (float)minZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)maxX, (float)minY, (float)minZ).color(red, green, blue, alpha).endVertex();
+
+        // 后面 (Z+)
+        buffer.vertex(matrix, (float)minX, (float)minY, (float)maxZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)maxX, (float)minY, (float)maxZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)maxX, (float)maxY, (float)maxZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)minX, (float)maxY, (float)maxZ).color(red, green, blue, alpha).endVertex();
+
+        // 左面 (X-)
+        buffer.vertex(matrix, (float)minX, (float)minY, (float)minZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)minX, (float)minY, (float)maxZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)minX, (float)maxY, (float)maxZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)minX, (float)maxY, (float)minZ).color(red, green, blue, alpha).endVertex();
+
+        // 右面 (X+)
+        buffer.vertex(matrix, (float)maxX, (float)minY, (float)minZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)maxX, (float)maxY, (float)minZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)maxX, (float)maxY, (float)maxZ).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(matrix, (float)maxX, (float)minY, (float)maxZ).color(red, green, blue, alpha).endVertex();
+
+        tesselator.end();
+
+        RenderSystem.enableCull();
+        RenderSystem.disableBlend();
     }
 
     /**

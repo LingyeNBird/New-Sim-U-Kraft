@@ -819,6 +819,26 @@ public class CommercialWorkHandler {
     }
 
     /**
+     * 当雇佣记录指向已死亡 NPC 时主动释放 V2 雇佣，避免每 tick 反复 findNPCByUuid。
+     * 区块卸载场景下 NPCDataManager 还存有数据，不会被误清。
+     */
+    private static void releaseStaleAssignment(MinecraftServer server, UUID npcUuid, BlockPos buildingPos) {
+        if (server == null || npcUuid == null) {
+            return;
+        }
+        try {
+            if (NPCDataManager.getNPCNameByUUID(server, npcUuid) != null) {
+                return;
+            }
+            com.xiaoliang.simukraft.employment.service.EmploymentServices.get(server)
+                    .fireByNpc(new com.xiaoliang.simukraft.employment.service.EmploymentCommands.FireByNpcCommand(npcUuid));
+            LOGGER.info("[CommercialWorkHandler] 已清理僵尸雇佣记录 buildingPos={} npcUuid={}", buildingPos, npcUuid);
+        } catch (Exception e) {
+            LOGGER.error("[CommercialWorkHandler] 清理僵尸雇佣记录失败 buildingPos={} npcUuid={}", buildingPos, npcUuid, e);
+        }
+    }
+
+    /**
      * 解析物品ID为 ItemStack
      */
     private static ItemStack parseItemStack(String itemId) {

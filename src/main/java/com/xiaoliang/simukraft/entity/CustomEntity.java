@@ -888,9 +888,11 @@ public class CustomEntity extends PathfinderMob {
                 buildCooldownTicks++;
                 if (buildCooldownTicks >= buildSpeed) {
                     if (this.level() instanceof ServerLevel serverLevel) {
-                        // 使用循环连续处理方块，直到找到一个需要放置的方块
+                        int maxBuildScanPerTick = Math.max(8, buildSpeed);
+                        int scannedCandidates = 0;
                         boolean placedBlock = false;
-                        while (!placedBlock && constructionTask.hasNextBlock()) {
+                        while (!placedBlock && constructionTask.hasNextBlock() && scannedCandidates < maxBuildScanPerTick) {
+                            scannedCandidates++;
                             // 修复：传入serverLevel以检查方块是否已存在，避免重复消耗材料
                             com.xiaoliang.simukraft.building.ConstructionTask.BlockInfo blockInfo = constructionTask.getNextBlock(serverLevel);
                             if (blockInfo == null) break;
@@ -909,15 +911,15 @@ public class CustomEntity extends PathfinderMob {
                                         if (ServerConfig.shouldLogSkippedBlocks()) {
                                             Simukraft.LOGGER.info("[CustomEntity] Blacklisted block encountered during air placement, keeping original and skipping pos {}: {}", targetPos, blockId);
                                         }
+                                        completeBuildStepAfterSkip();
                                         placedBlock = true;
-                                        buildCooldownTicks = 0;
                                         constructionProgress = constructionTask.getProgress();
                                         continue;
                                     }
                                     serverLevel.destroyBlock(targetPos, false);
                                 }
+                                completeBuildStepAfterSkip();
                                 placedBlock = true;
-                                buildCooldownTicks = 0;
                                 constructionProgress = constructionTask.getProgress();
                                 continue;
                             }
@@ -932,7 +934,9 @@ public class CustomEntity extends PathfinderMob {
                                     if (ServerConfig.shouldLogSkippedBlocks()) {
                                         Simukraft.LOGGER.info("[CustomEntity] Blacklisted block encountered during construction, keeping original and skipping pos {}: {}", targetPos, blockId);
                                     }
-                                    placedBlock = true; // 标记为已处理（虽然没放方块）
+                                    completeBuildStepAfterSkip();
+                                    placedBlock = true;
+                                    constructionProgress = constructionTask.getProgress();
                                     continue;
                                 }
                                 // 清除阻挡方块
@@ -943,8 +947,9 @@ public class CustomEntity extends PathfinderMob {
                                 // 放置目标方块
                                 serverLevel.setBlock(targetPos, targetState, 3);
                             } catch (Exception e) {
-                                //Simukraft.LOGGER.error("[CustomEntity] 放置方块失败 at {}: {}", targetPos, targetState, e);
+                                completeBuildStepAfterSkip();
                                 placedBlock = true;
+                                constructionProgress = constructionTask.getProgress();
                                 continue;
                             }
 
@@ -1034,6 +1039,10 @@ public class CustomEntity extends PathfinderMob {
         if (!this.level().isClientSide && this.tickCount % 400 == 0) {
             checkLifespanAndDie();
         }
+    }
+
+    private void completeBuildStepAfterSkip() {
+        buildCooldownTicks = 0;
     }
 
     /**

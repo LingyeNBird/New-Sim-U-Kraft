@@ -72,6 +72,9 @@ public class ConstructionTask {
     private final Map<BlockPos, Integer> blockIndexLookup;
     @Nonnull
     private final List<BlockPos> controlBoxPositions;
+    @Nonnull
+    private final List<LayerRange> layerRanges;
+    private int currentLayerRangeIndex = 0;
     @Nullable
     private ServerLevel runtimeLevel = null;
     @Nonnull
@@ -100,6 +103,7 @@ public class ConstructionTask {
         this.blocksToPlace = List.copyOf(Objects.requireNonNull(loadAndParseBlocks()));
         this.blockIndexLookup = Map.copyOf(buildBlockIndexLookup(this.blocksToPlace));
         this.controlBoxPositions = collectControlBoxPositions(this.blocksToPlace);
+        this.layerRanges = List.copyOf(buildLayerRanges(this.blocksToPlace));
         this.materialCache = new BuilderMaterialCache(this.buildBoxPos);
         this.requiredWorkflowChunks = collectRequiredWorkflowChunks();
 
@@ -128,6 +132,7 @@ public class ConstructionTask {
         this.blocksToPlace = List.copyOf(Objects.requireNonNull(loadAndParseBlocks()));
         this.blockIndexLookup = Map.copyOf(buildBlockIndexLookup(this.blocksToPlace));
         this.controlBoxPositions = collectControlBoxPositions(this.blocksToPlace);
+        this.layerRanges = List.copyOf(buildLayerRanges(this.blocksToPlace));
         this.materialCache = new BuilderMaterialCache(this.buildBoxPos);
         this.requiredWorkflowChunks = collectRequiredWorkflowChunks();
 
@@ -196,9 +201,14 @@ public class ConstructionTask {
          * 2 = 需要支撑的方块（门、活板门、按钮、拉杆、火把、灯笼等）
          * 3 = 重力方块（沙子、沙砾等，最后建造）
          * 4 = 液体相关方块（统一最后放置，避免流体更新影响前序建造）
+         * 5 = 空气方块（拆除任务放到层尾，避免层切换时先扫大量空气）
          */
         private int getBlockPriority(BlockState state) {
             Block block = state.getBlock();
+
+            if (state.isAir()) {
+                return 5;
+            }
 
             if (!state.getFluidState().isEmpty()) {
                 return 4;
@@ -606,24 +616,26 @@ public class ConstructionTask {
      * @param serverLevel 服务器世界，用于检查方块状态。如果为null，则跳过已存在方块检查
      */
     public BlockInfo getNextBlock(ServerLevel serverLevel) {
+        syncCurrentLayerRangeIndex();
         while (hasNextBlock()) {
+            LayerRange currentLayerRange = getCurrentLayerRange();
+            if (currentLayerRange != null && currentBlockIndex > currentLayerRange.endIndex()) {
+                currentLayerRangeIndex++;
+                continue;
+            }
+
             BlockInfo next = blocksToPlace.get(currentBlockIndex);
+
+            if (serverLevel != null && shouldSkipWithoutPlacement(serverLevel, next)) {
+                currentBlockIndex++;
+                continue;
+            }
 
             // menglannnn: 允许放置空气方块（用于拆除/替换已有方块）
             // 空气方块直接返回，不需要消耗材料
             if (next.state().isAir()) {
                 currentBlockIndex++;
                 return next;
-            }
-
-            // 修复：在消耗材料之前检查方块是否已经存在
-            if (serverLevel != null) {
-                BlockState currentState = serverLevel.getBlockState(Objects.requireNonNull(next.pos()));
-                // 如果目标方块已经存在且类型正确，跳过消耗材料
-                if (next.state().getBlock() == currentState.getBlock()) {
-                    currentBlockIndex++;
-                    continue;
-                }
             }
 
             // 检查是否需要消耗材料
@@ -670,6 +682,32 @@ public class ConstructionTask {
             }
         }
         return null;
+    }
+
+    private boolean shouldSkipWithoutPlacement(@Nonnull ServerLevel serverLevel, @Nonnull BlockInfo next) {
+        BlockState targetState = next.state();
+        BlockPos targetPos = next.pos();
+
+        if (targetState.isAir()) {
+            return serverLevel.getBlockState(targetPos).isAir();
+        }
+
+        BlockState currentState = serverLevel.getBlockState(targetPos);
+        if (targetState.getBlock() == currentState.getBlock()) {
+            return true;
+        }
+
+        if (!isDoubleBlock(targetState)) {
+            return false;
+        }
+
+        BlockPos otherHalfPos = getOtherHalfPos(targetState, targetPos);
+        if (otherHalfPos == null) {
+            return false;
+        }
+
+        int otherHalfIndex = findBlockIndex(otherHalfPos, targetState);
+        return otherHalfIndex != -1 && otherHalfIndex < currentBlockIndex;
     }
 
     /**
@@ -749,6 +787,49 @@ public class ConstructionTask {
             indexLookup.put(blocks.get(i).pos(), i);
         }
         return indexLookup;
+    }
+
+    @Nonnull
+    private static List<LayerRange> buildLayerRanges(@Nonnull List<BlockInfo> blocks) {
+        if (blocks.isEmpty()) {
+            return List.of();
+        }
+
+        List<LayerRange> ranges = new ArrayList<>();
+        int layerStartIndex = 0;
+        int currentY = blocks.get(0).pos().getY();
+        for (int i = 1; i < blocks.size(); i++) {
+            int y = blocks.get(i).pos().getY();
+            if (y != currentY) {
+                ranges.add(new LayerRange(currentY, layerStartIndex, i - 1));
+                currentY = y;
+                layerStartIndex = i;
+            }
+        }
+        ranges.add(new LayerRange(currentY, layerStartIndex, blocks.size() - 1));
+        return ranges;
+    }
+
+    private void syncCurrentLayerRangeIndex() {
+        while (currentLayerRangeIndex < layerRanges.size()) {
+            LayerRange currentRange = layerRanges.get(currentLayerRangeIndex);
+            if (currentBlockIndex < currentRange.startIndex()) {
+                return;
+            }
+            if (currentBlockIndex <= currentRange.endIndex()) {
+                return;
+            }
+            currentLayerRangeIndex++;
+        }
+    }
+
+    @Nullable
+    private LayerRange getCurrentLayerRange() {
+        syncCurrentLayerRangeIndex();
+        if (currentLayerRangeIndex < 0 || currentLayerRangeIndex >= layerRanges.size()) {
+            return null;
+        }
+        return layerRanges.get(currentLayerRangeIndex);
     }
 
     @Nonnull
@@ -916,6 +997,8 @@ public class ConstructionTask {
     public void setCurrentBlockIndex(int index) {
         // 允许设置索引为 blocksToPlace.size() 表示建造完成
         this.currentBlockIndex = Math.max(0, Math.min(index, blocksToPlace.size()));
+        this.currentLayerRangeIndex = 0;
+        syncCurrentLayerRangeIndex();
     }
 
     /**
@@ -965,6 +1048,9 @@ public class ConstructionTask {
         }
         
         return materials;
+    }
+
+    private record LayerRange(int y, int startIndex, int endIndex) {
     }
 
     public record BlockInfo(@Nonnull BlockPos pos, @Nonnull BlockState state) {

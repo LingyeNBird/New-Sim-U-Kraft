@@ -132,10 +132,10 @@ public class CustomEntity extends PathfinderMob {
 
     public CustomEntity(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
+        this.setPersistenceRequired();
         this.moveControl = new CustomMoveControl(this);
         this.setMaxUpStep(1.0F);
         
-        // simukraft: 初始化新的自定义寻路系统
         if (level instanceof ServerLevel serverLevel) {
             this.npcPathNavigator = new com.xiaoliang.simukraft.entity.ai.path.NPCPathNavigator(this, serverLevel);
         }
@@ -468,6 +468,7 @@ public class CustomEntity extends PathfinderMob {
     @Override
     public void readAdditionalSaveData(CompoundTag tag) {
         super.readAdditionalSaveData(tag);
+        this.setPersistenceRequired();
         this.fullName = tag.getString("fullName");
         this.gender = Gender.fromString(tag.getString("gender"));
         this.skinPath = tag.getString("skinPath");
@@ -682,6 +683,16 @@ public class CustomEntity extends PathfinderMob {
     @Override
     public void remove(RemovalReason reason) {
         super.remove(reason);
+    }
+
+    @Override
+    public boolean removeWhenFarAway(double distanceToClosestPlayer) {
+        return false;
+    }
+
+    @Override
+    public boolean requiresCustomPersistence() {
+        return true;
     }
 
     @Override

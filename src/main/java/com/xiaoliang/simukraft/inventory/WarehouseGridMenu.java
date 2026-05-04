@@ -22,7 +22,7 @@ import java.util.Map;
  * 仓库网格菜单 - 使用真实槽位系统
  * 显示所有容器中的物品（按种类合并）
  */
-@SuppressWarnings({"null", "unused", "removal"})
+@SuppressWarnings({"null", "unused"})
 public class WarehouseGridMenu extends AbstractContainerMenu {
 
     private final BlockPos warehousePos;

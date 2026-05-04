@@ -282,7 +282,6 @@ public class ServerConfig {
         SPEC = builder.build();
     }
 
-    @SuppressWarnings("removal")
     public static void register() {
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, SPEC);
     }

@@ -13,7 +13,6 @@ import net.minecraftforge.fml.ModLoadingContext;
 @OnlyIn(Dist.CLIENT)
 public class ModMenuIntegration {
 
-    @SuppressWarnings("removal")
     public static void registerConfigScreen() {
         ModLoadingContext.get().registerExtensionPoint(
                 ConfigScreenHandler.ConfigScreenFactory.class,

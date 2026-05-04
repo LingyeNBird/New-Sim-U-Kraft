@@ -43,7 +43,6 @@ public final class ClientConfigSpec {
     private ClientConfigSpec() {
     }
 
-    @SuppressWarnings("removal")
     public static void register() {
         ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, SPEC);
     }

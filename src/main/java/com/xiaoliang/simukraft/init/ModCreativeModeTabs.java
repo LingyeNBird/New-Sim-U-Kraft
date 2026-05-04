@@ -3,6 +3,7 @@ package com.xiaoliang.simukraft.init;
 import com.xiaoliang.simukraft.Simukraft;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.registries.DeferredRegister;
@@ -15,11 +16,15 @@ public class ModCreativeModeTabs {
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS =
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, Simukraft.MOD_ID);
 
+    // 创造模式Tab栏背景纹理路径
+    private static final ResourceLocation TAB_BACKGROUND = new ResourceLocation(Simukraft.MOD_ID, "textures/gui/tab_gui.png");
+
     //方块物品添加到simukraft_tab里
     public static final RegistryObject<CreativeModeTab> SIMUKRAFT_TAB = CREATIVE_MODE_TABS.register("simukraft_tab",
             () -> CreativeModeTab.builder()
                     .title(nn(Component.translatable("itemGroup.simukraft")))
                     .icon(() -> new ItemStack(nn(ModBlocks.BUILD_BOX.get())))
+                    .withBackgroundLocation(TAB_BACKGROUND)
                     .displayItems((params, output) -> {
                         output.accept(nn(ModBlocks.BUILD_BOX.get()));
                         output.accept(nn(ModBlocks.NSUK_FARMLAND_BOX.get()));

@@ -1,0 +1,7 @@
+name:肉铺
+size:13 x 6 x 9
+amount:8.64元
+author:枫烨
+description:售卖生牛肉和猪肉的店铺。
+tags:price_low,material_medium,stage_early
+job_type:meatShopOwner

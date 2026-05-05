@@ -1,0 +1,38 @@
+{
+  "buildingId": "fishersHouse",
+  "buildingName": "渔人小屋",
+  "jobType": "fisher",
+  "jobName": "渔人",
+  "heldItem": "minecraft:fishing_rod",
+  "workTime": {
+    "start": 100,
+    "end": 12000
+  },
+  "recipes": [
+    {
+      "recipeId": "_default",
+      "recipeName": "默认配方",
+      "heldItem": "",
+      "materials": [],
+      "products": []
+    },
+    {
+      "recipeId": "building_recipe2",
+      "recipeName": "配方2",
+      "heldItem": "",
+      "materials": [],
+      "products": []
+    }
+  ],
+  "spawnEntity": {
+    "enabled": false,
+    "type": "minecraft:sheep",
+    "count": 5
+  },
+  "messages": {
+    "hired": "§a{npcName} {jobName} 已开始工作",
+    "workComplete": "§6{npcName} {jobName}：生产完成",
+    "chestFull": "§c{npcName} {jobName}：箱子已满！",
+    "xpGained": "{npcName} 获得经验值"
+  }
+}

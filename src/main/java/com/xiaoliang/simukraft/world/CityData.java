@@ -41,7 +41,7 @@ public class CityData extends SavedData {
     public static class CityInfo {
         private final UUID cityId;
         private String cityName;
-        private final UUID mayorId;
+        private UUID mayorId;
         private String mayorName;
         private final List<UUID> citizenIds = new ArrayList<>();
         private final BlockPos cityCorePos;
@@ -130,6 +130,12 @@ public class CityData extends SavedData {
         
         public void setMayorName(String mayorName) {
             this.mayorName = mayorName;
+        }
+
+        public void setMayor(UUID mayorId, String mayorName) {
+            this.mayorId = mayorId;
+            this.mayorName = mayorName;
+            this.officials.remove(mayorName);
         }
 
         public List<UUID> getCitizenIds() {
@@ -537,6 +543,37 @@ public class CityData extends SavedData {
             return result;
         }
         return false;
+    }
+
+    public boolean transferMayor(UUID cityId, String playerName, UUID playerId, ServerLevel level) {
+        CityInfo city = cities.get(cityId);
+        if (city == null || playerName == null || playerName.isBlank() || playerId == null) {
+            return false;
+        }
+
+        UUID previousMayorId = city.getMayorId();
+        String previousMayorName = city.getMayorName();
+        if (playerId.equals(previousMayorId) && playerName.equals(previousMayorName)) {
+            return false;
+        }
+
+        city.setMayor(playerId, playerName);
+        playerCityMap.put(playerName, cityId);
+        if (previousMayorName != null && !previousMayorName.isBlank() && !previousMayorName.equals(playerName)) {
+            playerCityMap.remove(previousMayorName);
+        }
+        setDirty();
+
+        if (level != null && level.getServer() != null) {
+            Set<Long> claimedChunks = CityChunkData.get(level).getCityChunks(cityId);
+            if (!claimedChunks.isEmpty()) {
+                com.xiaoliang.simukraft.integration.IntegrationBridge.onCityChunksUnclaimed(level.getServer(), cityId, claimedChunks);
+                com.xiaoliang.simukraft.integration.IntegrationBridge.onCityChunksClaimed(level.getServer(), cityId, playerId, claimedChunks);
+            }
+            syncHUDDataForCity(cityId, level);
+        }
+
+        return true;
     }
 
     public boolean removeOfficialFromCity(UUID cityId, String playerName) {

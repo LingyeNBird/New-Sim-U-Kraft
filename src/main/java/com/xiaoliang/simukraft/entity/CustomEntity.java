@@ -70,6 +70,7 @@ import java.util.UUID;
 
 @SuppressWarnings({"null", "deprecation"})
 public class CustomEntity extends PathfinderMob {
+    private static final double FAST_WORK_TELEPORT_DISTANCE_SQR = 256.0D;
     private static final EntityDataAccessor<String> DATA_NAME = SynchedEntityData.defineId(CustomEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_GENDER = SynchedEntityData.defineId(CustomEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_SKIN_PATH = SynchedEntityData.defineId(CustomEntity.class, EntityDataSerializers.STRING);
@@ -218,6 +219,19 @@ public class CustomEntity extends PathfinderMob {
      */
     public com.xiaoliang.simukraft.entity.ai.path.NPCPathNavigator getNPCPathNavigator() {
         return this.npcPathNavigator;
+    }
+
+    @Nullable
+    public BlockPos getCustomPathTarget() {
+        return this.npcPathNavigator != null ? this.npcPathNavigator.getTargetPos() : null;
+    }
+
+    public boolean isPathfindingTo(BlockPos pos) {
+        if (pos == null) {
+            return false;
+        }
+        BlockPos currentTarget = getCustomPathTarget();
+        return currentTarget != null && currentTarget.equals(pos);
     }
     
     /**
@@ -1447,10 +1461,19 @@ public class CustomEntity extends PathfinderMob {
     }
 
     public void scheduleHireArrivalTeleport(BlockPos pos) {
+        if (pos == null) {
+            return;
+        }
         // 幂等保护：如果已经在朝同一个目标传送，不要重置 30 tick 倒计时 —
         // 否则像 JobRuntimeService.correctWorkplaceDrift 这样的兜底路径每 100 tick 调一次，
         // 会让 NPC 长时间保持隐身，造成"NPC 消失"假象。
         if (this.hireArrivalTeleportActive && pos != null && pos.equals(this.targetPos)) {
+            return;
+        }
+        double distanceSqr = this.distanceToSqr(pos.getX() + 0.5D, pos.getY() + 1.0D, pos.getZ() + 0.5D);
+        // menglan: 远距离上班直接快速到岗，避免30tick演出期和超长寻路计算导致掉刻与抽搐。
+        if (distanceSqr >= FAST_WORK_TELEPORT_DISTANCE_SQR) {
+            performImmediateWorkTeleport(pos);
             return;
         }
         clearHireArrivalTeleportState();
@@ -1471,6 +1494,43 @@ public class CustomEntity extends PathfinderMob {
             this.setLastHurtByMob(null);
             this.setLastHurtMob(null);
         }
+    }
+
+    private void performImmediateWorkTeleport(BlockPos pos) {
+        clearHireArrivalTeleportState();
+        this.targetPos = pos;
+        this.teleportCountdown = -1;
+        this.isWorking = true;
+        this.teleportParticleTimer = -1;
+        this.hireArrivalTeleportActive = false;
+        this.hireArrivalRevealDelay = -1;
+        this.hireArrivalEffectPos = null;
+
+        if (!this.level().isClientSide) {
+            this.setInvisible(false);
+            this.setNoAi(true);
+            this.getNavigation().stop();
+            this.stopNewPathfinder();
+            this.setDeltaMovement(Vec3.ZERO);
+            this.setTarget(null);
+            this.setLastHurtByMob(null);
+            this.setLastHurtMob(null);
+        }
+
+        performTeleport();
+        this.teleportParticleTimer = -1;
+        if (!"builder".equals(this.job)) {
+            this.aiRestoreDelay = 5;
+        }
+    }
+
+    /**
+     * menglan: 判断NPC是否仍处于受控到岗传送流程中
+     */
+    public boolean isTeleportingForWork() {
+        return this.teleportCountdown > 0
+                || this.hireArrivalTeleportActive
+                || this.hireArrivalRevealDelay > 0;
     }
 
     public void setWorkStatus(WorkStatus status) {
@@ -1496,10 +1556,13 @@ public class CustomEntity extends PathfinderMob {
                     this.workSubState = WorkSubState.WORKING;
                     this.entityData.set(DATA_WORK_SUB_STATE, WorkSubState.WORKING.getDisplayName());
                 }
-                // 停止导航和移动，但不完全禁用AI
+            // 停止导航和移动，但不完全禁用AI
+            // menglannnn: 如果正在使用自定义寻路系统（如正在回岗路上），不要停止导航，否则会导致抽搐
+            if (!isUsingCustomPathfinder()) {
                 this.getNavigation().stop();
                 this.setDeltaMovement(Vec3.ZERO);
                 this.setTarget(null);
+            }
             } else {
                 this.isWorking = false;
                 this.workSubState = WorkSubState.NONE;

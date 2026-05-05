@@ -609,6 +609,40 @@ public class BuildingDataManager {
         }
     }
 
+    @Nullable
+    public static Path findBuildingNbtPath(String buildingName, String category) {
+        String fileName = buildingName + ".nbt";
+
+        try {
+            if (SIMUKRAFT_BUILDING_FOLDER.startsWith("/") || SIMUKRAFT_BUILDING_FOLDER.matches("[A-Za-z]:.*")) {
+                Path nbtPath = Paths.get(SIMUKRAFT_BUILDING_FOLDER, category, fileName);
+                return Files.exists(nbtPath) ? nbtPath : null;
+            }
+
+            Path rootPath = Paths.get("").toAbsolutePath();
+            Path nbtPath = rootPath.resolve(SIMUKRAFT_BUILDING_FOLDER).resolve(category).resolve(fileName);
+            return Files.exists(nbtPath) ? nbtPath : null;
+        } catch (Exception e) {
+            LOGGER.error("[BuildingDataManager] 定位建筑NBT路径失败: {}/{} -> {}", category, fileName, e.getMessage());
+            return null;
+        }
+    }
+
+    @Nullable
+    public static Long getBuildingNbtFileSize(String buildingName, String category) {
+        Path nbtPath = findBuildingNbtPath(buildingName, category);
+        if (nbtPath == null) {
+            return null;
+        }
+
+        try {
+            return Files.size(nbtPath);
+        } catch (Exception e) {
+            LOGGER.error("[BuildingDataManager] 获取建筑NBT大小失败: {}/{} -> {}", category, buildingName, e.getMessage());
+            return null;
+        }
+    }
+
     public static CompoundTag loadBuildingData(String buildingName, String category) {
         try {
             // 构建NBT文件路径

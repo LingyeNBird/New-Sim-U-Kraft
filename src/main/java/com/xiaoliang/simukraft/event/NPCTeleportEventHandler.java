@@ -18,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Mod.EventBusSubscriber(modid = Simukraft.MOD_ID)
 @SuppressWarnings({"null", "deprecation"})
 public class NPCTeleportEventHandler {
+    private static final int TELEPORT_SCAN_INTERVAL_TICKS = 10;
     
     // 存储NPC的传送状态
     private static final Map<Integer, TeleportState> npcTeleportStates = new ConcurrentHashMap<>();
@@ -43,13 +44,20 @@ public class NPCTeleportEventHandler {
             return;
         }
 
+        // 工业/农业到岗传送本身已经有事件链路处理，这里只做低频兜底，避免每tick扫描造成掉刻。
+        if (server.getTickCount() % TELEPORT_SCAN_INTERVAL_TICKS != 0) {
+            npcTeleportStates.entrySet().removeIf(entry -> isTeleportStateExpired(server, entry.getKey(), entry.getValue()));
+            return;
+        }
+
         // 复用NPC缓存，避免每tick遍历所有实体。
         for (ServerLevel level : server.getAllLevels()) {
             for (CustomEntity npc : NPCTaskScheduler.getNPCsInLevel(level)) {
+                if (npc == null || !npc.isAlive() || npc.isTeleportingForWork()) {
+                    continue;
+                }
                 String job = npc.getJob();
-                if ("shepherd".equals(job) || "butcher".equals(job) || "worker".equals(job)) {
-                    handleIndustrialNPCTeleport(npc, level);
-                } else if ("farmer".equals(job)) {
+                if ("farmer".equals(job)) {
                     handleFarmerTeleport(npc, level);
                 }
             }
@@ -112,15 +120,10 @@ public class NPCTeleportEventHandler {
         int npcId = npc.getId();
         
         if (!npcTeleportStates.containsKey(npcId)) {
-            var hiredFarmers = com.xiaoliang.simukraft.world.FarmlandHiredData.getHiredFarmers();
-            BlockPos farmlandBoxPos = null;
-            
-            for (var entry : hiredFarmers.entrySet()) {
-                if (entry.getValue().equals(npc.getUUID())) {
-                    farmlandBoxPos = entry.getKey();
-                    break;
-                }
+            if (npc.isUsingCustomPathfinder()) {
+                return;
             }
+            BlockPos farmlandBoxPos = com.xiaoliang.simukraft.world.FarmlandHiredData.getFarmlandPosByNpc(npc.getUUID());
             
             if (farmlandBoxPos != null) {
                 BlockPos npcPos = npc.blockPosition();
@@ -129,13 +132,9 @@ public class NPCTeleportEventHandler {
                 if (distance > 900) {
                     BlockPos targetPos = findSafePositionNearFarmland(farmlandBoxPos, level);
                     if (targetPos != null) {
-                        if (npc.moveToWithNewPathfinder(targetPos, 1.0D)) {
+                        // menglannnn: 只使用寻路回来，不再强制 TP 导致抽搐
+                        if (!npc.isPathfindingTo(targetPos) && npc.moveToWithNewPathfinder(targetPos, 1.0D)) {
                             Simukraft.LOGGER.info("农民寻路恢复：{} 开始前往农田盒附近 {}", npc.getFullName(), targetPos);
-                        } else {
-                            npc.teleportTo(targetPos.getX() + 0.5, targetPos.getY(), targetPos.getZ() + 0.5);
-                            npc.stopNewPathfinder();
-                            npcTeleportStates.put(npcId, new TeleportState(targetPos, null));
-                            Simukraft.LOGGER.info("农民传送：{} 传送到农田盒附近 {}", npc.getFullName(), targetPos);
                         }
                     }
                 }

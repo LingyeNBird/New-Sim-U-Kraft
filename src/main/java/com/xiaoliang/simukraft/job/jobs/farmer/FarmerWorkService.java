@@ -20,6 +20,8 @@ import java.util.concurrent.ConcurrentMap;
 
 @SuppressWarnings("null")
 public class FarmerWorkService extends AbstractWorkService {
+    private static final long FARMER_RECOVER_REISSUE_INTERVAL_TICKS = 20L;
+    private static final double FARMER_RECOVER_DISTANCE_SQR = 400.0D;
 
     public static final FarmerWorkService INSTANCE = new FarmerWorkService();
     
@@ -35,6 +37,7 @@ public class FarmerWorkService extends AbstractWorkService {
     private final ConcurrentMap<BlockPos, Long> farmlandLastMoistureTime0 = new ConcurrentHashMap<>();
     private final ConcurrentMap<BlockPos, Long> farmlandLastGrowthTime0 = new ConcurrentHashMap<>();
     private final ConcurrentMap<BlockPos, Long> farmlandLastHarvestTime0 = new ConcurrentHashMap<>();
+    private final ConcurrentMap<UUID, RecoveryAttempt> farmerRecoveryAttempts = new ConcurrentHashMap<>();
     
     @Override
     protected void onServerStart0(MinecraftServer server, ServerLevel level) {
@@ -188,6 +191,7 @@ public class FarmerWorkService extends AbstractWorkService {
     @Override
     public void restoreWorkState(CustomEntity npc, UUID npcUuid, ServerLevel level) {
         if (npc == null || npcUuid == null || level == null) return;
+        if (npc.isTeleportingForWork()) return;
         
         if (npc.getWorkSubState() == com.xiaoliang.simukraft.entity.WorkSubState.LUNCH_BREAK) {
             return;
@@ -206,24 +210,24 @@ public class FarmerWorkService extends AbstractWorkService {
         
         BlockPos npcPos = npc.blockPosition();
         double distance = npcPos.distSqr(farmlandBoxPos);
-        
-        if (distance > 400) {
+
+        if (distance > FARMER_RECOVER_DISTANCE_SQR) {
+            if (!shouldIssueRecoveryCommand(npc, farmlandBoxPos, level.getGameTime())) {
+                return;
+            }
             BlockPos targetPos = findSafePositionNearFarmland(farmlandBoxPos, level);
-            if (targetPos != null && !npc.moveToWithNewPathfinder(targetPos, 1.0D)) {
-                npc.teleportTo(targetPos.getX() + 0.5, targetPos.getY(), targetPos.getZ() + 0.5);
-                npc.stopNewPathfinder();
+            if (targetPos != null) {
+                // menglannnn: 同一工作点短时间内不重复下发回岗命令，避免寻路抽搐
+                if (!npc.isUsingCustomPathfinder() || !npc.isPathfindingTo(targetPos)) {
+                    npc.moveToWithNewPathfinder(targetPos, 1.0D);
+                    markRecoveryAttempt(npcUuid, farmlandBoxPos, level.getGameTime());
+                }
             }
         }
     }
     
     private BlockPos getFarmlandBoxForNpc(MinecraftServer server, UUID npcUuid) {
-        var hiredEmployeeMap = com.xiaoliang.simukraft.world.FarmlandHiredData.getHiredFarmers();
-        for (Map.Entry<BlockPos, UUID> entry : hiredEmployeeMap.entrySet()) {
-            if (entry.getValue().equals(npcUuid)) {
-                return entry.getKey();
-            }
-        }
-        return null;
+        return com.xiaoliang.simukraft.world.FarmlandHiredData.getFarmlandPosByNpc(npcUuid);
     }
     
     private BlockPos findSafePositionNearFarmland(BlockPos farmlandBoxPos, ServerLevel level) {
@@ -262,8 +266,11 @@ public class FarmerWorkService extends AbstractWorkService {
         if (npc == null || !npc.isAlive() || !"farmer".equals(npc.getJob())) {
             return;
         }
-        
-        restoreWorkState(npc, npcUuid, level);
+
+        // menglannnn: 只有状态异常或明显偏离农田时才恢复，避免每 tick 重置寻路
+        if (npc.getWorkStatus() != WorkStatus.WORKING || needsPositionRecovery(npc, farmlandBoxPos)) {
+            restoreWorkState(npc, npcUuid, level);
+        }
         
         farmlandLastMoistureTime.putIfAbsent(farmlandBoxPos, currentTime);
         farmlandLastGrowthTime.putIfAbsent(farmlandBoxPos, currentTime);
@@ -582,5 +589,47 @@ public class FarmerWorkService extends AbstractWorkService {
             case "melon" -> new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.MELON_SEEDS);
             default -> new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.WHEAT_SEEDS);
         };
+    }
+
+    private boolean needsPositionRecovery(CustomEntity npc, BlockPos farmlandBoxPos) {
+        if (npc == null || farmlandBoxPos == null || npc.isTeleportingForWork()) {
+            return false;
+        }
+        double distance = npc.distanceToSqr(
+                farmlandBoxPos.getX() + 0.5D,
+                farmlandBoxPos.getY() + 1.0D,
+                farmlandBoxPos.getZ() + 0.5D
+        );
+        return distance > FARMER_RECOVER_DISTANCE_SQR;
+    }
+
+    private boolean shouldIssueRecoveryCommand(CustomEntity npc, BlockPos farmlandBoxPos, long gameTime) {
+        if (npc == null || farmlandBoxPos == null) {
+            return false;
+        }
+        if (npc.isUsingCustomPathfinder() && npc.isPathfindingTo(farmlandBoxPos)) {
+            return false;
+        }
+        RecoveryAttempt lastAttempt = farmerRecoveryAttempts.get(npc.getUUID());
+        return lastAttempt == null
+                || !farmlandBoxPos.equals(lastAttempt.farmlandBoxPos)
+                || gameTime - lastAttempt.gameTime >= FARMER_RECOVER_REISSUE_INTERVAL_TICKS;
+    }
+
+    private void markRecoveryAttempt(UUID npcUuid, BlockPos farmlandBoxPos, long gameTime) {
+        if (npcUuid == null || farmlandBoxPos == null) {
+            return;
+        }
+        farmerRecoveryAttempts.put(npcUuid, new RecoveryAttempt(farmlandBoxPos.immutable(), gameTime));
+    }
+
+    private static final class RecoveryAttempt {
+        private final BlockPos farmlandBoxPos;
+        private final long gameTime;
+
+        private RecoveryAttempt(BlockPos farmlandBoxPos, long gameTime) {
+            this.farmlandBoxPos = farmlandBoxPos;
+            this.gameTime = gameTime;
+        }
     }
 }

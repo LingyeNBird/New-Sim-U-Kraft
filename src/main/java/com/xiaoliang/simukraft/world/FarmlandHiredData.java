@@ -320,6 +320,18 @@ public class FarmlandHiredData {
     public static UUID getHiredFarmer(BlockPos farmlandBoxPos) {
         return hiredFarmers.get(farmlandBoxPos);
     }
+
+    public static BlockPos getFarmlandPosByNpc(UUID npcUuid) {
+        if (npcUuid == null) {
+            return null;
+        }
+        for (Map.Entry<BlockPos, UUID> entry : hiredFarmers.entrySet()) {
+            if (npcUuid.equals(entry.getValue())) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
     
     // 清除雇佣农民数据
     public static void clearHiredFarmer(BlockPos farmlandBoxPos) {

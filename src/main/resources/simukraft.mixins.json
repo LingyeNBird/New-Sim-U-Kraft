@@ -15,6 +15,7 @@
         "MixinKeyboardHandler",
         "MixinBlockRenderDispatcher",
         "MixinAbstractContainerScreen",
+        "MixinWorldCreationUiState",
         "MixinForgeHooksClient",
         "xaero.MixinWorldMapSession",
         "ldlib.MixinModularUIGuiContainer"

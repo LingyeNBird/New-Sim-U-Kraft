@@ -318,7 +318,10 @@ public class ServerTickHandler {
         npc.setWorking(workStatus != WorkStatus.IDLE);
         npc.setStatusLabel(null);
 
-        if (workStatus != WorkStatus.IDLE && workplacePos != null && npc.distanceToSqr(
+        if (workStatus != WorkStatus.IDLE
+                && workplacePos != null
+                && !npc.isTeleportingForWork()
+                && npc.distanceToSqr(
                 workplacePos.getX() + 0.5D,
                 workplacePos.getY() + 1.0D,
                 workplacePos.getZ() + 0.5D

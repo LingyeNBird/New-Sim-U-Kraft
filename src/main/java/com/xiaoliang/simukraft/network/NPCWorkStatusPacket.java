@@ -160,7 +160,7 @@ public class NPCWorkStatusPacket {
         // 处理传送和重置
         if (status == WorkStatus.IDLE) {
             npc.resetToIdle();
-        } else if (workplacePos != null) {
+        } else if (workplacePos != null && !npc.isTeleportingForWork()) {
             npc.scheduleHireArrivalTeleport(workplacePos);
         }
 

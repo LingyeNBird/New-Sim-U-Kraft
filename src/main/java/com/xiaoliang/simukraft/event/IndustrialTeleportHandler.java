@@ -6,11 +6,12 @@ import com.xiaoliang.simukraft.building.IndustrialBuildingManager;
 import com.xiaoliang.simukraft.entity.CustomEntity;
 import com.xiaoliang.simukraft.init.ModBlocks;
 import com.xiaoliang.simukraft.job.jobs.industrialgeneric.IndustrialWorkHandler;
-import com.xiaoliang.simukraft.world.IndustrialHiredData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * 工业建筑传送处理器
@@ -19,6 +20,7 @@ import net.minecraftforge.fml.common.Mod;
  */
 @Mod.EventBusSubscriber(modid = "simukraft", bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class IndustrialTeleportHandler {
+    private static final Logger LOGGER = LogManager.getLogger();
 
     @SubscribeEvent
     public static void onNPCTeleportComplete(NPCTeleportCompleteEvent event) {
@@ -35,13 +37,6 @@ public class IndustrialTeleportHandler {
         String npcJob = npc.getJob();
         if (npcJob == null || npcJob.isEmpty()) return;
 
-        // 通过 IndustrialHiredData 读取该位置的 job_type
-        String jobType = IndustrialHiredData.getJobType(event.getLevel().getServer(), targetPos);
-        if (jobType == null || jobType.isEmpty()) return;
-
-        // 确认NPC职业与建筑职业匹配
-        if (!npcJob.equals(jobType)) return;
-
         // 获取建筑文件名
         String buildingFileName = IndustrialWorkHandler.getBuildingFileName((ServerLevel) event.getLevel(), targetPos);
         if (buildingFileName == null) return;
@@ -54,7 +49,8 @@ public class IndustrialTeleportHandler {
         if (!npcJob.equals(config.getJobType())) return;
 
         // 使用统一的工业工作处理器处理传送后的逻辑（生成生物、设置手持物品等）
-        System.out.println("[IndustrialTeleportHandler] 处理NPC传送：" + npc.getFullName() + "，职业：" + npcJob + "，建筑：" + buildingFileName);
+        LOGGER.debug("[IndustrialTeleportHandler] 处理NPC传送: {}, 职业: {}, 建筑: {}",
+                npc.getFullName(), npcJob, buildingFileName);
         IndustrialWorkHandler.onIndustrialNpcTeleported(npc, (ServerLevel) event.getLevel(), targetPos, buildingFileName);
 
         // 获取当前选择的配方ID
@@ -62,7 +58,7 @@ public class IndustrialTeleportHandler {
 
         // 设置手持物品（重进游戏后恢复，使用配方配置）
         String effectiveHeldItem = config.getEffectiveHeldItem(selectedRecipeId);
-        System.out.println("[IndustrialTeleportHandler] 设置手持物品：" + effectiveHeldItem);
+        LOGGER.debug("[IndustrialTeleportHandler] 设置手持物品: {}", effectiveHeldItem);
         IndustrialWorkHandler.setNpcHeldItem(npc, config, selectedRecipeId);
     }
 }

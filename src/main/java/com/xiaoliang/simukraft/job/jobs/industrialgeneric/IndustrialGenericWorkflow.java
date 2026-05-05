@@ -109,10 +109,24 @@ public final class IndustrialGenericWorkflow implements JobWorkflow {
     }
 
     private void handleIndustrialWork(CustomEntity npc, IndustrialGenericWorkTarget target) {
-        moveNpcToWorkplace(npc, target.factoryPos());
+        if (npc == null || target == null || npc.isTeleportingForWork()) {
+            return;
+        }
+        double distanceSqr = npc.distanceToSqr(
+                target.factoryPos().getX() + 0.5D,
+                target.factoryPos().getY() + 1.0D,
+                target.factoryPos().getZ() + 0.5D
+        );
+        // menglan: 工业工作tick不再每tick强制重发回岗请求，交给统一恢复协调器处理。
+        if (distanceSqr > 36.0D && !npc.isUsingCustomPathfinder()) {
+            moveNpcToWorkplace(npc, target.factoryPos());
+        }
     }
 
     private void moveNpcToWorkplace(CustomEntity npc, BlockPos workPos) {
+        if (npc == null || workPos == null || npc.isTeleportingForWork()) {
+            return;
+        }
         double targetX = workPos.getX() + 0.5D;
         double targetY = workPos.getY() + 1.0D;
         double targetZ = workPos.getZ() + 0.5D;

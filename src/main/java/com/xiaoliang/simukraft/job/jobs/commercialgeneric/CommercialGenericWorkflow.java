@@ -34,7 +34,6 @@ public final class CommercialGenericWorkflow implements JobWorkflow {
             npc.setJob(target.buildingConfig().getJobName());
             workService.setHeldItemFromConfig(npc, target.buildingConfig());
             NPCWorkResumeCoordinator.activateCommercialShift(npc, target.buildingPos());
-            moveNpcToWorkplace(npc, target.buildingPos());
         }
     }
 
@@ -88,23 +87,15 @@ public final class CommercialGenericWorkflow implements JobWorkflow {
 
     private void handleShiftStart(CustomEntity npc, net.minecraft.core.BlockPos buildingPos,
                                   CommercialBuildingConfig config, long gameTime) {
+        if (npc == null || buildingPos == null || npc.isTeleportingForWork()) {
+            return;
+        }
         long timeOfDay = gameTime % 24000L;
         int startTime = config.getWorkStartTime();
 
-        if (timeOfDay >= startTime && timeOfDay < startTime + 1000) {
+        if (timeOfDay >= startTime && timeOfDay < startTime + 100) {
             NPCWorkResumeCoordinator.activateCommercialShift(npc, buildingPos);
-            moveNpcToWorkplace(npc, buildingPos);
         }
     }
 
-    private void moveNpcToWorkplace(CustomEntity npc, net.minecraft.core.BlockPos workPos) {
-        double targetX = workPos.getX() + 0.5;
-        double targetY = workPos.getY() + 1.0;
-        double targetZ = workPos.getZ() + 0.5;
-
-        if (!npc.moveToWithNewPathfinder(targetX, targetY, targetZ, 1.0D)) {
-            npc.teleportTo(targetX, targetY, targetZ);
-            npc.stopNewPathfinder();
-        }
-    }
 }

@@ -46,6 +46,7 @@ public class WarehouseManagerWorkService extends AbstractWorkService {
     @Override
     public void restoreWorkState(CustomEntity npc, UUID npcUuid, ServerLevel level) {
         if (npc == null || npcUuid == null || level == null) return;
+        if (npc.isTeleportingForWork()) return;
 
         if (npc.getWorkStatus() != WorkStatus.WORKING) {
             npc.setWorkStatus(WorkStatus.WORKING);
@@ -63,6 +64,9 @@ public class WarehouseManagerWorkService extends AbstractWorkService {
     }
 
     private void correctWorkplaceDrift(CustomEntity npc, UUID npcUuid, ServerLevel level) {
+        if (npc == null || npc.isTeleportingForWork()) {
+            return;
+        }
         Map<BlockPos, UUID> hiredManagers = LogisticsHiredData.getServerBoxHiredNpcs(level.getServer());
         for (Map.Entry<BlockPos, UUID> entry : hiredManagers.entrySet()) {
             if (!entry.getValue().equals(npcUuid)) {

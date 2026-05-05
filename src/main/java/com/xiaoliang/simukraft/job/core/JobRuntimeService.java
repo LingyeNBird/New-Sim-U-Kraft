@@ -27,6 +27,7 @@ public final class JobRuntimeService {
     private static final int WORKPLACE_CHECK_INTERVAL_TICKS = 100;
     private static final double WORKPLACE_PATHFIND_DISTANCE_SQR = 36.0D;
     private static final double WORKPLACE_TELEPORT_DISTANCE_SQR = 900.0D;
+    private static final double WORKPLACE_DIRECT_RECOVER_TELEPORT_DISTANCE_SQR = 256.0D;
 
     private static final long STATE_SAVE_INTERVAL_TICKS = 6000L;
     private static final long ASSIGNMENT_CACHE_TTL_TICKS = 40L;
@@ -194,6 +195,9 @@ public final class JobRuntimeService {
         if (npc == null || assignment == null || assignment.workplacePos() == null) {
             return;
         }
+        if (npc.isTeleportingForWork()) {
+            return;
+        }
         if (npc.isSleeping() || npc.getWorkStatus() != WorkStatus.WORKING) {
             return;
         }
@@ -222,12 +226,20 @@ public final class JobRuntimeService {
             return;
         }
 
-        if (distanceSqr >= WORKPLACE_TELEPORT_DISTANCE_SQR) {
+        // menglannnn: 如果已经在寻路中，不要干扰
+        if (npc.isUsingCustomPathfinder()) {
+            return;
+        }
+
+        // menglannnn: 远距离回岗直接走受控传送，避免先做大范围寻路计算卡主线程。
+        if (distanceSqr >= WORKPLACE_DIRECT_RECOVER_TELEPORT_DISTANCE_SQR) {
             npc.scheduleHireArrivalTeleport(assignment.workplacePos());
             return;
         }
 
+        // 中近距离优先寻路，只有极远且寻路失败时才走传送兜底。
         if (!npc.moveToWithNewPathfinder(assignment.workplacePos(), 2.0D)) {
+            // menglannnn: 寻路开始就失败，立即走受控传送恢复位置（通常回控制盒）。
             npc.scheduleHireArrivalTeleport(assignment.workplacePos());
         }
     }

@@ -250,18 +250,18 @@ public class IndustrialHiredData {
     }
     
     public static String getJobType(MinecraftServer server, BlockPos pos) {
-        // 从雇佣数据中查找该位置的jobType
         try {
             if (server == null) {
                 Simukraft.LOGGER.warn("[IndustrialHiredData] Server is null in getJobType");
                 return null;
             }
-            // 加载雇佣数据
-            Map<BlockPos, IndustrialHireInfo> hiredEmployees = loadHiredEmployees(server);
-            IndustrialHireInfo hireInfo = hiredEmployees.get(pos);
-            if (hireInfo != null) {
-                return hireInfo.getJobType();
+            var assignments = EmploymentLegacyBridge.loadLatestByWorkBlock(server, WorkBlockType.INDUSTRIAL_CONTROL_BOX);
+            var assignment = assignments.get(pos);
+            if (assignment == null || !assignment.isAssigned()) {
+                return null;
             }
+            String buildingFileName = FileUtils.normalizeBuildingFileName(FileUtils.readIndustrialBuildingFileNameCached(server, pos));
+            return resolveDisplayJobType(assignment.jobType(), buildingFileName);
         } catch (Exception e) {
             Simukraft.LOGGER.error("[IndustrialHiredData] Failed to get jobType for pos {}", pos, e);
         }

@@ -436,9 +436,14 @@ public class NPCPathNavigator {
     }
 
     private void handlePathFail() {
+        BlockPos failedTarget = this.targetPos;
         stop();
         if (onPathFail != null) {
             onPathFail.onFail();
+        }
+        // menglannnn: 如果寻路失败且NPC正在工作中，则强制TP回目标位置（控制盒）
+        if (npc.isWorking() && failedTarget != null) {
+            npc.scheduleHireArrivalTeleport(failedTarget);
         }
     }
     

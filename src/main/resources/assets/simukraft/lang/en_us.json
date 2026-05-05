@@ -1,5 +1,6 @@
 {
   "itemGroup.simukraft": "§fNew:SimuKraft",
+  "generator.simukraft.debug_void": "SimuKraft Debug World",
 
   "block.simukraft.build_box": "NSUK-Build Box",
   "block.simukraft.nsuk_farmland_box": "NSUK-Farmland Box",

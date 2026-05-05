@@ -39,7 +39,6 @@ public final class FarmerWorkflow implements JobWorkflow {
                     CustomEntity npc = context.npc();
 
                     if (npc != null) {
-                        workService.restoreWorkState(npc, context.assignment().npcUuid(), context.level());
                         workService.handleContinuousWork(context);
                     }
 

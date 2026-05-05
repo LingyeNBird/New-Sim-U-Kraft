@@ -15,6 +15,7 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
+@SuppressWarnings("null")
 public class CustomEntityModel<T extends LivingEntity> extends PlayerModel<T> {
     private static final float CHILD_BODY_VISUAL_SCALE = 0.62F;
     private boolean renderChildModel = false;

@@ -5,9 +5,9 @@ import com.xiaoliang.simukraft.config.ServerConfig;
 import com.xiaoliang.simukraft.entity.ai.HoldItemGoal;
 import com.xiaoliang.simukraft.entity.ai.IdleNearbyStrollGoal;
 import com.xiaoliang.simukraft.entity.ai.NPCBoundaryManager;
-import com.xiaoliang.simukraft.init.ModSoundEvents;
 import com.xiaoliang.simukraft.init.ModBlocks;
 import com.xiaoliang.simukraft.utils.NPCDataManager;
+import com.xiaoliang.simukraft.utils.NPCVoiceManager;
 import com.xiaoliang.simukraft.utils.NameManager;
 import com.xiaoliang.simukraft.utils.ResidentManager;
 import com.xiaoliang.simukraft.utils.SkinManager;
@@ -136,6 +136,8 @@ public class CustomEntity extends PathfinderMob {
     @Nullable
     private String statusLabelExpireKey = null;
     private static final int VISIT_STATUS_RADIUS = 4;
+    private long nextAmbientVoiceGameTime = 0L;
+    private long nextNightVoiceGameTime = 0L;
 
 
     public CustomEntity(EntityType<? extends PathfinderMob> type, Level level) {
@@ -418,9 +420,7 @@ public class CustomEntity extends PathfinderMob {
 
     @Override
     protected SoundEvent getHurtSound(DamageSource damageSource) {
-        return this.getGender() == Gender.FEMALE
-                ? ModSoundEvents.FEMALE_HURT.get()
-                : ModSoundEvents.MALE_HURT.get();
+        return NPCVoiceManager.getHurtSound(this);
     }
 
     @Override
@@ -855,6 +855,10 @@ public class CustomEntity extends PathfinderMob {
                 checkChildGrowth(serverLevel.getServer());
             }
 
+            if (aliveAndActive && this.level() instanceof ServerLevel serverLevel) {
+                tickAmbientVoice(serverLevel);
+            }
+
             if (statusLabelExpireTick > 0 && this.tickCount >= statusLabelExpireTick) {
                 String current = this.entityData.get(DATA_STATUS_LABEL);
                 if (statusLabelExpireKey != null && statusLabelExpireKey.equals(current)) {
@@ -898,6 +902,7 @@ public class CustomEntity extends PathfinderMob {
                 if (hireArrivalRevealDelay <= 0) {
                     this.setInvisible(false);
                     spawnHireArrivalParticles(serverLevel, hireArrivalEffectPos, true);
+                    NPCVoiceManager.playArrivalVoice(serverLevel, this, hireArrivalEffectPos);
                     hireArrivalEffectPos = null;
                 }
             }
@@ -1606,8 +1611,40 @@ public class CustomEntity extends PathfinderMob {
 
         performTeleport();
         this.teleportParticleTimer = -1;
+        if (this.level() instanceof ServerLevel serverLevel) {
+            NPCVoiceManager.playArrivalVoice(serverLevel, this, pos);
+        }
         if (!"builder".equals(this.job)) {
             this.aiRestoreDelay = 5;
+        }
+    }
+
+    private void tickAmbientVoice(ServerLevel level) {
+        if (level == null || this.isSleeping() || this.isDeadOrDying() || this.isChildForm() || this.isTeleportingForWork()) {
+            return;
+        }
+        if (level.getNearestPlayer(this, 16.0D) == null) {
+            return;
+        }
+
+        long gameTime = level.getGameTime();
+        if (nextAmbientVoiceGameTime <= 0L) {
+            nextAmbientVoiceGameTime = gameTime + 600L + this.getRandom().nextInt(600);
+        }
+        if (nextNightVoiceGameTime <= 0L) {
+            nextNightVoiceGameTime = gameTime + 1200L + this.getRandom().nextInt(1200);
+        }
+
+        if (level.isNight() && gameTime >= nextNightVoiceGameTime) {
+            NPCVoiceManager.playNightVoice(level, this);
+            nextNightVoiceGameTime = gameTime + 1800L + this.getRandom().nextInt(1200);
+            nextAmbientVoiceGameTime = Math.max(nextAmbientVoiceGameTime, gameTime + 400L);
+            return;
+        }
+
+        if (!level.isNight() && gameTime >= nextAmbientVoiceGameTime) {
+            NPCVoiceManager.playAmbientChat(level, this);
+            nextAmbientVoiceGameTime = gameTime + 1200L + this.getRandom().nextInt(1200);
         }
     }
 

@@ -16,6 +16,7 @@ import com.xiaoliang.simukraft.building.CommercialBuildingConfig;
 import com.xiaoliang.simukraft.init.ModSoundEvents;
 import com.xiaoliang.simukraft.network.NetworkManager;
 import com.xiaoliang.simukraft.network.RequestStockSyncPacket;
+import com.xiaoliang.simukraft.utils.NPCVoiceManager;
 import com.xiaoliang.simukraft.world.CommercialHiredData;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -87,10 +88,15 @@ public class NPCSellInfoScreen extends ModularUIGuiContainer {
                 ? (InfoUIHolder) ((ModularUI) this.modularUI).holder
                 : null;
 
-        playOpenSound();
+        playOpenSound(buildingFileName);
     }
 
-    private void playOpenSound() {
+    private void playOpenSound(String buildingFileName) {
+        if (NPCVoiceManager.isBuildingMaterialStore(buildingFileName)) {
+            Minecraft.getInstance().getSoundManager().play(
+                    nn(SimpleSoundInstance.forUI(nn(NPCVoiceManager.getStoreOpenSound()), 1.0F)));
+            return;
+        }
         Minecraft.getInstance().getSoundManager().play(
                 nn(SimpleSoundInstance.forUI(nn(ModSoundEvents.CITY_CORE_OPEN.get()), 1.0F)));
     }

@@ -14,6 +14,7 @@ import com.lowdragmc.lowdraglib.gui.widget.WidgetGroup;
 import com.lowdragmc.lowdraglib.utils.Size;
 import com.xiaoliang.simukraft.building.CommercialBuildingConfig;
 import com.xiaoliang.simukraft.init.ModSoundEvents;
+import com.xiaoliang.simukraft.utils.NPCVoiceManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.core.BlockPos;
@@ -55,10 +56,15 @@ public class CommercialTradeSelectScreen extends ModularUIGuiContainer {
     public CommercialTradeSelectScreen(BlockPos pos, String buildingFileName) {
         super(createHolderAndUI(pos, buildingFileName), 0);
 
-        playOpenSound();
+        playOpenSound(buildingFileName);
     }
 
-    private void playOpenSound() {
+    private void playOpenSound(String buildingFileName) {
+        if (NPCVoiceManager.isBuildingMaterialStore(buildingFileName)) {
+            Minecraft.getInstance().getSoundManager().play(
+                    nn(SimpleSoundInstance.forUI(nn(NPCVoiceManager.getStoreOpenSound()), 1.0F)));
+            return;
+        }
         Minecraft.getInstance().getSoundManager().play(
                 nn(SimpleSoundInstance.forUI(nn(ModSoundEvents.CITY_CORE_OPEN.get()), 1.0F)));
     }

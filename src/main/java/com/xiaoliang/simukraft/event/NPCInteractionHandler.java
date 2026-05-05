@@ -7,14 +7,12 @@ import com.xiaoliang.simukraft.employment.client.WorkBlockHireClientCache;
 import com.xiaoliang.simukraft.employment.domain.EmploymentAssignment;
 import com.xiaoliang.simukraft.employment.domain.WorkBlockType;
 import com.xiaoliang.simukraft.entity.CustomEntity;
-import com.xiaoliang.simukraft.entity.Gender;
-import com.xiaoliang.simukraft.init.ModSoundEvents;
 import com.xiaoliang.simukraft.utils.ContainerUtils;
+import com.xiaoliang.simukraft.utils.NPCVoiceManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.BedBlock;
@@ -142,7 +140,7 @@ public class NPCInteractionHandler {
             }
 
             if (event.getSide().isClient()) {
-                playGenderSound(npc);
+                playNpcUiVoice(npc);
                 // 潜行时右键永远打开NPC详细信息界面
                 if (player.isShiftKeyDown()) {
                     openNPCDetailScreen(npc);
@@ -230,15 +228,11 @@ public class NPCInteractionHandler {
     }
 
     @OnlyIn(Dist.CLIENT)
-    private static void playGenderSound(CustomEntity npc) {
+    private static void playNpcUiVoice(CustomEntity npc) {
         Minecraft minecraft = Minecraft.getInstance();
-        SoundEvent sound = npc.getGender() == Gender.FEMALE
-                ? ModSoundEvents.FEMALE_HELLO.get()
-                : ModSoundEvents.MALE_HELLO.get();
-
         minecraft.getSoundManager().play(
                 SimpleSoundInstance.forUI(
-                        sound,
+                        NPCVoiceManager.getUiOpenSound(npc),
                         1.0F,
                         1.0F
                 )

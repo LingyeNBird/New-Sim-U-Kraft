@@ -230,6 +230,8 @@ public final class NPCFoodMarket {
             }
             npc.addHunger(nutrition);
 
+            NPCVoiceManager.playFoodVoice(level, npc, plan.buildingFileName());
+
             level.playSound(
                     null,
                     Objects.requireNonNull(npc.blockPosition()),

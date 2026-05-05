@@ -529,6 +529,9 @@ public final class NPCFamilyManager {
         if (femaleNpc != null) {
             resetNpcEmploymentState(server, femaleNpc);
             keepNpcInLabor(server, femaleNpc);
+            if (femaleNpc.level() instanceof ServerLevel serverLevel) {
+                NPCVoiceManager.playPregnantVoice(serverLevel, femaleNpc);
+            }
         }
         LOGGER.info("[NPCFamilyManager] NPC {} 进入临产状态", NPCDataManager.getNPCNameByUUID(server, femaleUuid));
         return true;
@@ -810,6 +813,7 @@ public final class NPCFamilyManager {
 
             CityData.get(level).addCitizenToCity(cityId, childNpc.getUUID(), level);
             level.addFreshEntity(childNpc);
+            NPCVoiceManager.playBirthVoice(level, childSpawnPos);
             LOGGER.info("[NPCFamilyManager] NPC {} 在诊所分娩成功，孩子 {}", motherNpc.getFullName(), childNpc.getFullName());
         } catch (Exception e) {
             LOGGER.error("[NPCFamilyManager] NPC {} 分娩生成孩子失败", motherNpc.getFullName(), e);

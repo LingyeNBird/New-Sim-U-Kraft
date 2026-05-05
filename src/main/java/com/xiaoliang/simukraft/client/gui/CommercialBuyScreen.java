@@ -18,6 +18,7 @@ import com.xiaoliang.simukraft.init.ModSoundEvents;
 import com.xiaoliang.simukraft.network.CommercialBuyPacket;
 import com.xiaoliang.simukraft.network.NetworkManager;
 import com.xiaoliang.simukraft.network.RequestStockSyncPacket;
+import com.xiaoliang.simukraft.utils.NPCVoiceManager;
 import com.xiaoliang.simukraft.world.CommercialHiredData;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -91,10 +92,15 @@ public class CommercialBuyScreen extends ModularUIGuiContainer {
                 ? (BuyUIHolder) ((ModularUI) this.modularUI).holder
                 : null;
 
-        playOpenSound();
+        playOpenSound(buildingFileName);
     }
 
-    private void playOpenSound() {
+    private void playOpenSound(String buildingFileName) {
+        if (NPCVoiceManager.isBuildingMaterialStore(buildingFileName)) {
+            Minecraft.getInstance().getSoundManager().play(
+                    nn(SimpleSoundInstance.forUI(nn(NPCVoiceManager.getStoreOpenSound()), 1.0F)));
+            return;
+        }
         Minecraft.getInstance().getSoundManager().play(
                 nn(SimpleSoundInstance.forUI(nn(ModSoundEvents.CITY_CORE_OPEN.get()), 1.0F)));
     }
@@ -1002,9 +1008,18 @@ public class CommercialBuyScreen extends ModularUIGuiContainer {
                     new CommercialBuyPacket(controlBoxPos, buildingFileName, itemsMap, totalPrice)
             );
 
-            mc.getSoundManager().play(
-                    nn(SimpleSoundInstance.forUI(nn(ModSoundEvents.MONEY_COLLECT.get()), 1.0F, 1.0F))
-            );
+            if (NPCVoiceManager.isBuildingMaterialStore(buildingFileName)) {
+                mc.getSoundManager().play(
+                        nn(SimpleSoundInstance.forUI(nn(NPCVoiceManager.getStorePaymentSound()), 1.0F, 1.0F))
+                );
+                mc.getSoundManager().play(
+                        nn(SimpleSoundInstance.forUI(nn(NPCVoiceManager.getStoreCashSound()), 1.0F, 1.0F))
+                );
+            } else {
+                mc.getSoundManager().play(
+                        nn(SimpleSoundInstance.forUI(nn(ModSoundEvents.MONEY_COLLECT.get()), 1.0F, 1.0F))
+                );
+            }
 
             selectedQuantities.clear();
             mc.setScreen(null);

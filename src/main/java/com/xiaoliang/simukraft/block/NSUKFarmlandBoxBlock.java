@@ -23,10 +23,15 @@ import javax.annotation.Nonnull;
 
 public class NSUKFarmlandBoxBlock extends Block {
     public NSUKFarmlandBoxBlock() {
-        super(Objects.requireNonNull(BlockBehaviour.Properties.of())
-                .mapColor(Objects.requireNonNull(MapColor.WOOD))
+        super(createProperties());
+    }
+
+    @SuppressWarnings("null")
+    private static BlockBehaviour.Properties createProperties() {
+        return BlockBehaviour.Properties.of()
+                .mapColor(MapColor.WOOD)
                 .strength(0.8F)
-                .sound(Objects.requireNonNull(SoundType.WOOD)));
+                .sound(SoundType.WOOD);
     }
 
     // 音效 - 放置时播放农田盒专用音效

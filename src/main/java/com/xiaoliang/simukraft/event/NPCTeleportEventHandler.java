@@ -2,8 +2,6 @@ package com.xiaoliang.simukraft.event;
 
 import com.xiaoliang.simukraft.Simukraft;
 import com.xiaoliang.simukraft.entity.CustomEntity;
-import com.xiaoliang.simukraft.init.ModBlocks;
-import com.xiaoliang.simukraft.job.jobs.industrialgeneric.IndustrialWorkHandler;
 import com.xiaoliang.simukraft.utils.NPCTaskScheduler;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
@@ -12,28 +10,10 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 @Mod.EventBusSubscriber(modid = Simukraft.MOD_ID)
 @SuppressWarnings({"null", "deprecation"})
 public class NPCTeleportEventHandler {
     private static final int TELEPORT_SCAN_INTERVAL_TICKS = 10;
-    
-    // 存储NPC的传送状态
-    private static final Map<Integer, TeleportState> npcTeleportStates = new ConcurrentHashMap<>();
-    
-    private static class TeleportState {
-        BlockPos targetPos;
-        int ticksAtTarget;
-        String buildingFileName; // 新增：建筑文件名
-        
-        TeleportState(BlockPos targetPos, String buildingFileName) {
-            this.targetPos = targetPos;
-            this.ticksAtTarget = 0;
-            this.buildingFileName = buildingFileName;
-        }
-    }
     
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
@@ -46,7 +26,6 @@ public class NPCTeleportEventHandler {
 
         // 工业/农业到岗传送本身已经有事件链路处理，这里只做低频兜底，避免每tick扫描造成掉刻。
         if (server.getTickCount() % TELEPORT_SCAN_INTERVAL_TICKS != 0) {
-            npcTeleportStates.entrySet().removeIf(entry -> isTeleportStateExpired(server, entry.getKey(), entry.getValue()));
             return;
         }
 
@@ -62,80 +41,27 @@ public class NPCTeleportEventHandler {
                 }
             }
         }
-
-        npcTeleportStates.entrySet().removeIf(entry -> isTeleportStateExpired(server, entry.getKey(), entry.getValue()));
-    }
-
-    private static boolean isTeleportStateExpired(MinecraftServer server, Integer npcId, TeleportState state) {
-        for (ServerLevel level : server.getAllLevels()) {
-            var entity = level.getEntity(npcId);
-            if (entity instanceof CustomEntity npc) {
-                return !state.targetPos.equals(npc.blockPosition());
-            }
-        }
-        return true;
-    }
-    
-    private static void handleIndustrialNPCTeleport(CustomEntity npc, ServerLevel level) {
-        int npcId = npc.getId();
-        BlockPos currentPos = npc.blockPosition();
-        
-        TeleportState state = npcTeleportStates.get(npcId);
-        
-        if (state == null) {
-            // 新传送，检查是否传送到工业控制箱
-            if (level.getBlockState(currentPos).getBlock() == ModBlocks.INDUSTRIAL_CONTROL_BOX.get()) {
-                // 获取建筑文件名
-                String buildingFileName = IndustrialWorkHandler.getBuildingFileName(level, currentPos);
-                if (buildingFileName == null) {
-                    buildingFileName = "industrial"; // 默认值
-                }
-                npcTeleportStates.put(npcId, new TeleportState(currentPos, buildingFileName));
-            }
-            return;
-        }
-        
-        // 检查NPC是否还在目标位置
-        if (currentPos.equals(state.targetPos)) {
-            state.ticksAtTarget++;
-            
-            // 如果NPC在目标位置停留了足够长时间（约1秒），认为传送完成
-            if (state.ticksAtTarget >= 20) {
-                // 传送完成，使用统一的处理器
-                IndustrialWorkHandler.onIndustrialNpcTeleported(npc, level, state.targetPos, state.buildingFileName);
-                
-                // 移除状态记录
-                npcTeleportStates.remove(npcId);
-            }
-        } else {
-            // NPC移动了，清除状态
-            npcTeleportStates.remove(npcId);
-        }
     }
     
     /**
      * 处理农民传送后的状态恢复
      */
     private static void handleFarmerTeleport(CustomEntity npc, ServerLevel level) {
-        int npcId = npc.getId();
+        if (npc.isUsingCustomPathfinder()) {
+            return;
+        }
+        BlockPos farmlandBoxPos = com.xiaoliang.simukraft.world.FarmlandHiredData.getFarmlandPosByNpc(npc.getUUID());
         
-        if (!npcTeleportStates.containsKey(npcId)) {
-            if (npc.isUsingCustomPathfinder()) {
-                return;
-            }
-            BlockPos farmlandBoxPos = com.xiaoliang.simukraft.world.FarmlandHiredData.getFarmlandPosByNpc(npc.getUUID());
+        if (farmlandBoxPos != null) {
+            BlockPos npcPos = npc.blockPosition();
+            double distance = npcPos.distSqr(farmlandBoxPos);
             
-            if (farmlandBoxPos != null) {
-                BlockPos npcPos = npc.blockPosition();
-                double distance = npcPos.distSqr(farmlandBoxPos);
-                
-                if (distance > 900) {
-                    BlockPos targetPos = findSafePositionNearFarmland(farmlandBoxPos, level);
-                    if (targetPos != null) {
-                        // menglannnn: 只使用寻路回来，不再强制 TP 导致抽搐
-                        if (!npc.isPathfindingTo(targetPos) && npc.moveToWithNewPathfinder(targetPos, 1.0D)) {
-                            Simukraft.LOGGER.info("农民寻路恢复：{} 开始前往农田盒附近 {}", npc.getFullName(), targetPos);
-                        }
+            if (distance > 900) {
+                BlockPos targetPos = findSafePositionNearFarmland(farmlandBoxPos, level);
+                if (targetPos != null) {
+                    // menglannnn: 只使用寻路回来，不再强制 TP 导致抽搐
+                    if (!npc.isPathfindingTo(targetPos) && npc.moveToWithNewPathfinder(targetPos, 1.0D)) {
+                        Simukraft.LOGGER.info("农民寻路恢复：{} 开始前往农田盒附近 {}", npc.getFullName(), targetPos);
                     }
                 }
             }

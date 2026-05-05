@@ -1,6 +1,8 @@
 package com.xiaoliang.simukraft.utils;
 
 import com.google.gson.*;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.storage.LevelResource;
@@ -86,6 +88,12 @@ public class NPCDataManager {
     }
 
     private record SaveSkillDataRequest(MinecraftServer server, UUID npcUuid, int level, int xp) {
+    }
+
+    public record NPCLastKnownLocation(String dimensionId, BlockPos blockPos) {
+    }
+
+    public record NPCBasicData(String name, String cityId, String skinPath) {
     }
 
     private static void startSaveThread() {
@@ -253,6 +261,108 @@ public class NPCDataManager {
         } catch (Exception e) {
             LOGGER.error("Failed to record NPC data with age, sickness and lifespan", e);
         }
+    }
+
+    public static void updateNPCLastKnownLocation(MinecraftServer server, UUID uuid, String dimensionId, BlockPos blockPos) {
+        if (server == null || uuid == null || dimensionId == null || dimensionId.isBlank() || blockPos == null) {
+            return;
+        }
+        try {
+            Path worldDir = getWorldPath(server);
+            Path npcDir = worldDir.resolve(FileUtils.MODE_DIR).resolve(NPC_DIR);
+            Path npcFile = npcDir.resolve(NPC_FILE);
+            if (!Files.exists(npcFile)) {
+                return;
+            }
+
+            JsonArray npcArray;
+            try (Reader reader = Files.newBufferedReader(npcFile, StandardCharsets.UTF_8)) {
+                npcArray = JsonParser.parseReader(reader).getAsJsonArray();
+            } catch (JsonSyntaxException e) {
+                LOGGER.warn("Corrupted NPC data file, skip updating last known location");
+                return;
+            }
+
+            boolean changed = false;
+            for (JsonElement element : npcArray) {
+                JsonObject npcObj = element.getAsJsonObject();
+                if (npcObj.has("uuid") && uuid.toString().equals(npcObj.get("uuid").getAsString())) {
+                    if (!dimensionId.equals(npcObj.has("lastDimension") ? npcObj.get("lastDimension").getAsString() : null)
+                            || blockPos.getX() != getIntOrDefault(npcObj, "lastX", Integer.MIN_VALUE)
+                            || blockPos.getY() != getIntOrDefault(npcObj, "lastY", Integer.MIN_VALUE)
+                            || blockPos.getZ() != getIntOrDefault(npcObj, "lastZ", Integer.MIN_VALUE)) {
+                        npcObj.addProperty("lastDimension", dimensionId);
+                        npcObj.addProperty("lastX", blockPos.getX());
+                        npcObj.addProperty("lastY", blockPos.getY());
+                        npcObj.addProperty("lastZ", blockPos.getZ());
+                        changed = true;
+                    }
+                    break;
+                }
+            }
+
+            if (!changed) {
+                return;
+            }
+
+            try (Writer writer = Files.newBufferedWriter(npcFile, StandardCharsets.UTF_8)) {
+                gson.toJson(npcArray, writer);
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to update NPC last known location for UUID: " + uuid, e);
+        }
+    }
+
+    public static NPCLastKnownLocation getNPCLastKnownLocation(MinecraftServer server, UUID uuid) {
+        if (server == null || uuid == null) {
+            return null;
+        }
+        try {
+            Path worldDir = getWorldPath(server);
+            Path npcDir = worldDir.resolve(FileUtils.MODE_DIR).resolve(NPC_DIR);
+            Path npcFile = npcDir.resolve(NPC_FILE);
+
+            if (!Files.exists(npcFile)) {
+                return null;
+            }
+
+            JsonArray npcArray;
+            try (Reader reader = Files.newBufferedReader(npcFile, StandardCharsets.UTF_8)) {
+                npcArray = JsonParser.parseReader(reader).getAsJsonArray();
+            } catch (JsonSyntaxException e) {
+                LOGGER.warn("Corrupted NPC data file, returning null last known location");
+                return null;
+            }
+
+            for (JsonElement element : npcArray) {
+                JsonObject npcObj = element.getAsJsonObject();
+                if (!npcObj.has("uuid") || !uuid.toString().equals(npcObj.get("uuid").getAsString())) {
+                    continue;
+                }
+                if (!npcObj.has("lastDimension") || !npcObj.has("lastX") || !npcObj.has("lastY") || !npcObj.has("lastZ")) {
+                    return null;
+                }
+                String dimensionId = npcObj.get("lastDimension").getAsString();
+                if (dimensionId == null || dimensionId.isBlank() || ResourceLocation.tryParse(dimensionId) == null) {
+                    return null;
+                }
+                return new NPCLastKnownLocation(
+                        dimensionId,
+                        new BlockPos(
+                                npcObj.get("lastX").getAsInt(),
+                                npcObj.get("lastY").getAsInt(),
+                                npcObj.get("lastZ").getAsInt()
+                        )
+                );
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to get NPC last known location by UUID: " + uuid, e);
+        }
+        return null;
+    }
+
+    private static int getIntOrDefault(JsonObject jsonObject, String key, int fallback) {
+        return jsonObject.has(key) ? jsonObject.get(key).getAsInt() : fallback;
     }
 
     /**
@@ -1109,6 +1219,96 @@ public class NPCDataManager {
     }
 
     // ==================== V2瀛樺偍鏀噣鏂规硶 ====================
+
+    public static Map<UUID, NPCBasicData> getAllNPCBasicData(MinecraftServer server) {
+        Map<UUID, NPCBasicData> npcData = new HashMap<>();
+        if (server == null) {
+            return npcData;
+        }
+
+        try {
+            Path worldDir = getWorldPath(server);
+            Path npcDir = worldDir.resolve(FileUtils.MODE_DIR).resolve(NPC_DIR);
+            Path npcFile = npcDir.resolve(NPC_FILE);
+
+            if (!Files.exists(npcFile)) {
+                return npcData;
+            }
+
+            JsonArray npcArray;
+            try (Reader reader = Files.newBufferedReader(npcFile, StandardCharsets.UTF_8)) {
+                npcArray = JsonParser.parseReader(reader).getAsJsonArray();
+            } catch (JsonSyntaxException e) {
+                LOGGER.warn("Corrupted NPC data file, returning empty npc basic data");
+                return npcData;
+            }
+
+            for (JsonElement element : npcArray) {
+                JsonObject npcObj = element.getAsJsonObject();
+                if (!npcObj.has("uuid")) {
+                    continue;
+                }
+                try {
+                    UUID uuid = UUID.fromString(npcObj.get("uuid").getAsString());
+                    String name = npcObj.has("name") ? npcObj.get("name").getAsString() : "";
+                    String cityId = npcObj.has("cityId") ? npcObj.get("cityId").getAsString() : "";
+                    String skinPath = npcObj.has("skin") ? npcObj.get("skin").getAsString() : "";
+                    npcData.put(uuid, new NPCBasicData(name, cityId, skinPath));
+                    if (name != null && !name.isEmpty()) {
+                        npcNameCache.put(uuid, name);
+                    }
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to get all NPC basic data", e);
+        }
+        return npcData;
+    }
+
+    public static Map<UUID, SkillDataCache> getAllNPCSkillData(MinecraftServer server) {
+        Map<UUID, SkillDataCache> skillData = new HashMap<>();
+        if (server == null) {
+            return skillData;
+        }
+
+        try {
+            Path worldDir = getWorldPath(server);
+            Path npcDir = worldDir.resolve(FileUtils.MODE_DIR).resolve(NPC_DIR);
+            Path skillFile = npcDir.resolve(SKILL_FILE);
+
+            if (!Files.exists(skillFile)) {
+                return skillData;
+            }
+
+            JsonArray skillArray;
+            try (Reader reader = Files.newBufferedReader(skillFile, StandardCharsets.UTF_8)) {
+                skillArray = JsonParser.parseReader(reader).getAsJsonArray();
+            } catch (JsonSyntaxException e) {
+                LOGGER.warn("Corrupted skill data file, returning empty npc skill data");
+                return skillData;
+            }
+
+            for (JsonElement element : skillArray) {
+                JsonObject skillObj = element.getAsJsonObject();
+                if (!skillObj.has("uuid")) {
+                    continue;
+                }
+                try {
+                    UUID uuid = UUID.fromString(skillObj.get("uuid").getAsString());
+                    int level = skillObj.has("level") ? skillObj.get("level").getAsInt() : 1;
+                    int xp = skillObj.has("xp") ? skillObj.get("xp").getAsInt() : 50;
+                    SkillDataCache cache = new SkillDataCache(level, xp);
+                    skillData.put(uuid, cache);
+                    skillDataCache.put(uuid, cache);
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to get all NPC skill data", e);
+        }
+        return skillData;
+    }
 
     /**
      * 鑾峰彇鎵€鏈塎PC鐨刄UID鍒楄〃

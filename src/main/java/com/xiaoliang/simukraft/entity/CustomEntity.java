@@ -790,6 +790,15 @@ public class CustomEntity extends PathfinderMob {
                 dataRecorded = true;
             }
 
+            if (dataRecorded && this.tickCount % 40 == 0 && this.level() instanceof ServerLevel serverLevel) {
+                NPCDataManager.updateNPCLastKnownLocation(
+                        serverLevel.getServer(),
+                        this.getUUID(),
+                        serverLevel.dimension().location().toString(),
+                        this.blockPosition()
+                );
+            }
+
             // 处理居民分配（每5秒检查一次）
             // 修复：死亡NPC不应该再分配住宅
             if (aliveAndActive && nameInitialized && fullName != null && !fullName.isEmpty()

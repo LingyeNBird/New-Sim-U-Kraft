@@ -7,7 +7,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.storage.LevelResource;
-import net.minecraft.world.phys.AABB;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -437,17 +436,12 @@ public class ResidentManager {
                 return npcList;
             }
 
-            List<UUID> citizenIds = cityInfo.getCitizenIds();
+            Set<UUID> citizenIds = new HashSet<>(cityInfo.getCitizenIds());
             LOGGER.debug("[ResidentManager] 城市 {} 当前有 {} 个居民", cityId, citizenIds.size());
 
-            // 鑾峰彇鎵€鏈変笘鐣岀殑NPC瀹炰綋
+            // 复用 NPC 缓存，避免每次都对所有世界做超大 AABB 实体扫描。
             for (ServerLevel level : server.getAllLevels()) {
-                List<CustomEntity> allNPCs = level.getEntitiesOfClass(
-                        CustomEntity.class,
-                        new AABB(-30000000, -30000000, -30000000, 30000000, 30000000, 30000000)
-                );
-
-                for (CustomEntity npc : allNPCs) {
+                for (CustomEntity npc : NPCTaskScheduler.getNPCsInLevel(level)) {
                     if (citizenIds.contains(npc.getUUID())) {
                         boolean hasResidence = hasResidenceAssigned(server, npc.getUUID());
                         npcList.add(new NPCInfo(
@@ -771,12 +765,7 @@ public class ResidentManager {
     private static UUID findNPCCityId(MinecraftServer server, String npcName) {
         try {
             for (ServerLevel level : server.getAllLevels()) {
-                List<CustomEntity> allNPCs = level.getEntitiesOfClass(
-                        CustomEntity.class,
-                        new AABB(-30000000, -30000000, -30000000, 30000000, 30000000, 30000000)
-                );
-
-                for (CustomEntity npc : allNPCs) {
+                for (CustomEntity npc : NPCTaskScheduler.getNPCsInLevel(level)) {
                     // 淇锛氳烦杩囨浜＄殑NPC
                     if (npc.isDeadOrDying()) {
                         continue;

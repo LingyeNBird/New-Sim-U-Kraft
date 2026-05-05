@@ -30,10 +30,15 @@ public class ResidentialControlBoxBlock extends Block {
     private static final Logger LOGGER = LogManager.getLogger();
     
     public ResidentialControlBoxBlock() {
-        super(Objects.requireNonNull(BlockBehaviour.Properties.of())
-                .mapColor(Objects.requireNonNull(MapColor.METAL))
+        super(createProperties());
+    }
+
+    @SuppressWarnings("null")
+    private static BlockBehaviour.Properties createProperties() {
+        return BlockBehaviour.Properties.of()
+                .mapColor(MapColor.METAL)
                 .strength(1.0F)
-                .sound(Objects.requireNonNull(SoundType.METAL)));
+                .sound(SoundType.METAL);
     }
 
     @Override

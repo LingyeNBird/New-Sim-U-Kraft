@@ -3,7 +3,6 @@ package com.xiaoliang.simukraft.debug;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.storage.DimensionDataStorage;
 
@@ -72,7 +71,7 @@ public class DebugWorldSavedData extends SavedData {
 
     public static DebugWorldSavedData get(ServerLevel level) {
         MinecraftServer server = level.getServer();
-        ServerLevel overworld = server != null ? server.getLevel(Level.OVERWORLD) : level;
+        ServerLevel overworld = server != null ? server.overworld() : level;
         if (overworld == null) {
             overworld = level;
         }

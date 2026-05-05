@@ -23,7 +23,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.RandomSource;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -64,7 +63,6 @@ public final class DebugWorldGenerator {
     private static final int MAX_STRUCTURE_VOLUME = 180000;
     private static final long MAX_NBT_FILE_BYTES = 2_000_000L;
     private static final String DEBUG_CITY_NAME = "debug";
-    private static final String DEBUG_CITY_MAYOR_NAME = "debug_system";
     private static final UUID DEBUG_CITY_MAYOR_ID =
             UUID.nameUUIDFromBytes("simukraft:debug_city_mayor".getBytes(StandardCharsets.UTF_8));
     private static final int DEBUG_CITY_CORE_OFFSET_Z = 16;

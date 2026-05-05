@@ -1,7 +1,6 @@
 package com.xiaoliang.simukraft.mixin;
 
 import com.xiaoliang.simukraft.Simukraft;
-import com.xiaoliang.simukraft.debug.DebugWorldGenerator;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 import net.minecraft.core.Holder;
 import net.minecraft.resources.ResourceLocation;

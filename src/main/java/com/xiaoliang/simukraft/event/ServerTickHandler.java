@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Mod.EventBusSubscriber(modid = "simukraft", bus = Mod.EventBusSubscriber.Bus.FORGE)
 @SuppressWarnings("null")
 public class ServerTickHandler {
+    private static final ResourceKey<Level> OVERWORLD_KEY = Level.OVERWORLD;
     private static int delayTicks = 0;
     private static ServerPlayer delayedPlayer;
     
@@ -58,15 +59,17 @@ public class ServerTickHandler {
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
             tickCounter++;
+            MinecraftServer server = event.getServer();
+            ServerLevel overworld = server != null ? server.getLevel(OVERWORLD_KEY) : null;
 
             if (startupRestoreDelayTicks >= 0) {
                 if (startupRestoreDelayTicks-- == 0) {
-                    restoreHiredNpcWorkStates(event.getServer());
+                    restoreHiredNpcWorkStates(server);
                     startupRestoreDelayTicks = -1;
                 }
             }
 
-            processScheduledBuilderRefreshes(event.getServer());
+            processScheduledBuilderRefreshes(server);
 
             // 处理延迟的NPC处理
             if (delayedPlayer != null) {
@@ -77,22 +80,22 @@ public class ServerTickHandler {
             }
 
             // 检测玩家起床事件并启动肉铺老板工作（必须在主线程执行）
-            detectPlayerWakeUp(event);
+            detectPlayerWakeUp(server, overworld);
 
             // 检测中午时间并生成新NPC（如果有空闲住宅）
-            detectNoonAndSpawnNPC(event);
+            detectNoonAndSpawnNPC(server, overworld);
 
             // 检测商业建筑补货时间
-            detectCommercialRestockTime(event);
+            detectCommercialRestockTime(server, overworld);
 
             // 使用多线程调度器更新工作进度（降低频率）
             if (tickCounter % WORK_PROGRESS_INTERVAL == 0) {
-                submitWorkProgressTasks(event.getServer());
+                submitWorkProgressTasks(server);
             }
 
             // 使用多线程调度器更新NPC休息状态（降低频率）
             if (tickCounter % REST_UPDATE_INTERVAL == 0) {
-                submitRestStatusTasks(event.getServer());
+                submitRestStatusTasks(server);
             }
         }
     }
@@ -158,19 +161,12 @@ public class ServerTickHandler {
      * 检测时间触发工作 - 替代玩家起床检测
      * 在早上6:00触发所有商店老板的工作
      */
-    private static void detectPlayerWakeUp(TickEvent.ServerTickEvent event) {
-        // 获取服务器实例
-        var server = event.getServer();
+    private static void detectPlayerWakeUp(MinecraftServer server, ServerLevel overworld) {
         if (server == null) {
             LOGGER.warn("无法获取Minecraft服务器实例");
             return;
         }
 
-        // 获取当前游戏时间
-        ServerLevel overworld = server.getLevel(net.minecraft.resources.ResourceKey.create(
-            net.minecraft.core.registries.Registries.DIMENSION,
-            net.minecraft.resources.ResourceLocation.parse("minecraft:overworld")
-        ));
         if (overworld == null) return;
 
         long dayTime = overworld.getDayTime() % 24000L;
@@ -199,15 +195,8 @@ public class ServerTickHandler {
     /**
      * 检测中午时间并生成新NPC（如果有空闲住宅且所有NPC都有住宅）
      */
-    private static void detectNoonAndSpawnNPC(TickEvent.ServerTickEvent event) {
-        var server = event.getServer();
+    private static void detectNoonAndSpawnNPC(MinecraftServer server, ServerLevel overworld) {
         if (server == null) return;
-
-        // 获取主世界时间
-        ServerLevel overworld = server.getLevel(net.minecraft.resources.ResourceKey.create(
-                net.minecraft.core.registries.Registries.DIMENSION,
-                net.minecraft.resources.ResourceLocation.parse("minecraft:overworld")
-        ));
         if (overworld == null) return;
 
         long dayTime = overworld.getDayTime() % 24000L;
@@ -236,15 +225,8 @@ public class ServerTickHandler {
     /**
      * 检测商业建筑补货时间并触发补货
      */
-    private static void detectCommercialRestockTime(TickEvent.ServerTickEvent event) {
-        var server = event.getServer();
+    private static void detectCommercialRestockTime(MinecraftServer server, ServerLevel overworld) {
         if (server == null) return;
-
-        // 获取主世界时间
-        ServerLevel overworld = server.getLevel(net.minecraft.resources.ResourceKey.create(
-                net.minecraft.core.registries.Registries.DIMENSION,
-                net.minecraft.resources.ResourceLocation.parse("minecraft:overworld")
-        ));
         if (overworld == null) return;
 
         long dayTime = overworld.getDayTime() % 24000L;

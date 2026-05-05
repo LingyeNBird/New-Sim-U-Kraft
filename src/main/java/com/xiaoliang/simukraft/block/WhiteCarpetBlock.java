@@ -18,12 +18,17 @@ public class WhiteCarpetBlock extends Block {
     protected static final VoxelShape SHAPE = Shapes.box(0.0D, 0.0D, 0.0D, 1.0D, 0.0625D, 1.0D);
 
     public WhiteCarpetBlock() {
-        super(Objects.requireNonNull(BlockBehaviour.Properties.of())
-                .mapColor(Objects.requireNonNull(MapColor.WOOL))
+        super(createProperties());
+    }
+
+    @SuppressWarnings("null")
+    private static BlockBehaviour.Properties createProperties() {
+        return BlockBehaviour.Properties.of()
+                .mapColor(MapColor.WOOL)
                 .strength(0.1F)
-                .sound(Objects.requireNonNull(SoundType.WOOL))
+                .sound(SoundType.WOOL)
                 .noOcclusion()
-                .noCollission());
+                .noCollission();
     }
 
     @Override

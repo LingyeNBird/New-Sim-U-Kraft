@@ -26,7 +26,6 @@ public final class JobRuntimeService {
     private static final JobRuntimeService INSTANCE = new JobRuntimeService(EmploymentAssignmentProvider.legacy());
     private static final int WORKPLACE_CHECK_INTERVAL_TICKS = 100;
     private static final double WORKPLACE_PATHFIND_DISTANCE_SQR = 36.0D;
-    private static final double WORKPLACE_TELEPORT_DISTANCE_SQR = 900.0D;
     private static final double WORKPLACE_DIRECT_RECOVER_TELEPORT_DISTANCE_SQR = 256.0D;
 
     private static final long STATE_SAVE_INTERVAL_TICKS = 6000L;

@@ -208,6 +208,7 @@
   "gui.npc.overhead.marriage": "婚姻：%s",
   "gui.npc.overhead.hunger": "饥饿：%s",
   "gui.npc_marriage.single": "单身",
+  "gui.npc_marriage.married_format": "已婚(%s)",
 
   "gui.npc_card.identity_card": "身份证",
   "gui.npc_card.work_card": "工作证",
@@ -845,6 +846,9 @@
   "gui.npc.status.at_home": "在家休息",
   "gui.npc.status.going_to_work": "去上班",
   "gui.npc.status.lunch_break": "午休中",
+  "gui.npc.status.with_spouse": "和配偶贴贴中",
+  "gui.npc.status.pregnant_home": "怀孕在家",
+  "gui.npc.status.in_labor": "临产",
   "gui.npc.status.hungry": "需要进食",
   "gui.npc.status.working_task": "工作中",
   "gui.npc.status.selling": "售货中",

@@ -12,11 +12,13 @@ import com.lowdragmc.lowdraglib.gui.widget.WidgetGroup;
 import com.lowdragmc.lowdraglib.utils.Size;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.xiaoliang.simukraft.client.CityNameCache;
+import com.xiaoliang.simukraft.client.NPCFamilyInfoCache;
 import com.xiaoliang.simukraft.client.NPCResidenceCache;
 import com.xiaoliang.simukraft.entity.CustomEntity;
 import com.xiaoliang.simukraft.entity.Gender;
 import com.xiaoliang.simukraft.network.GetCityNamePacket;
 import com.xiaoliang.simukraft.network.NetworkManager;
+import com.xiaoliang.simukraft.network.RequestNPCFamilyInfoPacket;
 import com.xiaoliang.simukraft.network.RequestNPCResidencePacket;
 import com.xiaoliang.simukraft.utils.SkinManager;
 import net.minecraft.client.Minecraft;
@@ -75,6 +77,7 @@ public class NPCCardScreen extends ModularUIGuiContainer {
 
     private String cityName = null;
     private String residenceText = null;
+    private boolean familyInfoRequested = false;
 
     private final List<CardDef> cards = new ArrayList<>();
 
@@ -225,11 +228,27 @@ public class NPCCardScreen extends ModularUIGuiContainer {
     }
 
     private String getWorkStatusText() {
+        NPCFamilyInfoCache.FamilyInfo familyInfo = getFamilyInfo();
+        if (familyInfo != null) {
+            if ("pregnant".equalsIgnoreCase(familyInfo.pregnancyStage())) {
+                return Component.translatable("gui.npc.status.pregnant_home").getString();
+            }
+            if ("labor".equalsIgnoreCase(familyInfo.pregnancyStage())) {
+                return Component.translatable("gui.npc.status.in_labor").getString();
+            }
+        }
         return safeString(npc.getStatusDisplayComponent().getString());
     }
 
     private String getMarriageText() {
-        return safeString(Component.translatable("gui.npc_marriage.single").getString());
+        NPCFamilyInfoCache.FamilyInfo familyInfo = getFamilyInfo();
+        if (familyInfo == null) {
+            return Component.translatable("gui.npc_interaction.loading").getString();
+        }
+        if (familyInfo.spouseName() == null || familyInfo.spouseName().isBlank()) {
+            return safeString(Component.translatable("gui.npc_marriage.single").getString());
+        }
+        return Component.translatable("gui.npc_marriage.married_format", familyInfo.spouseName()).getString();
     }
 
     private String getHungerText() {
@@ -238,6 +257,16 @@ public class NPCCardScreen extends ModularUIGuiContainer {
 
     private float easeOut(float t) {
         return 1f - (1f - t) * (1f - t);
+    }
+
+    @Nullable
+    private NPCFamilyInfoCache.FamilyInfo getFamilyInfo() {
+        NPCFamilyInfoCache.FamilyInfo cachedInfo = NPCFamilyInfoCache.get(npc.getUUID());
+        if (cachedInfo == null && !familyInfoRequested) {
+            familyInfoRequested = true;
+            NetworkManager.INSTANCE.sendToServer(new RequestNPCFamilyInfoPacket(npc.getUUID()));
+        }
+        return cachedInfo;
     }
 
     // --- render ---

@@ -16,6 +16,7 @@ import com.xiaoliang.simukraft.world.CommercialHiredData;
 import com.xiaoliang.simukraft.world.FarmlandHiredData;
 import com.xiaoliang.simukraft.world.IndustrialHiredData;
 import com.xiaoliang.simukraft.world.LogisticsHiredData;
+import com.xiaoliang.simukraft.utils.NPCDataManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.FriendlyByteBuf;
@@ -201,7 +202,7 @@ public class EmploymentCommandPacket {
 
     private EmploymentResult executeCommand(com.xiaoliang.simukraft.employment.service.DefaultEmploymentService service, String actualDimension, MinecraftServer server) {
         return switch (commandType) {
-            case HIRE -> executeHire(service, actualDimension);
+            case HIRE -> executeHire(service, actualDimension, server);
             case FIRE_BY_NPC -> {
                 var result = service.fireByNpc(new EmploymentCommands.FireByNpcCommand(npcUuid));
                 if (!result.success() && npcUuid != null && server != null) {
@@ -254,10 +255,15 @@ public class EmploymentCommandPacket {
         };
     }
 
-    private EmploymentResult executeHire(com.xiaoliang.simukraft.employment.service.DefaultEmploymentService service, String actualDimension) {
+    private EmploymentResult executeHire(com.xiaoliang.simukraft.employment.service.DefaultEmploymentService service,
+                                         String actualDimension,
+                                         MinecraftServer server) {
         if (npcUuid == null || workplacePos == null) {
             Simukraft.LOGGER.debug("[EmploymentCommandPacket] executeHire aborted because npcUuid/workplacePos is null");
             return EmploymentResult.error(EmploymentErrorCode.INVALID_COMMAND, "npcUuid/workplacePos required for HIRE");
+        }
+        if (NPCDataManager.isNPCPregnantOrInLabor(server, npcUuid)) {
+            return EmploymentResult.error(EmploymentErrorCode.INVALID_COMMAND, "NPC is pregnant or in labor");
         }
 
         WorkBlockType resolvedType = WorkBlockType.fromLegacyKey(workBlockType);

@@ -66,6 +66,7 @@ public class RequestIdleNPCsPacket {
                     UUID npcUuid = npc.getUUID();
                     if (npc.getWorkStatus() != WorkStatus.IDLE
                             || NPCRestHandler.isLocked(npcUuid)
+                            || NPCDataManager.isNPCPregnantOrInLabor(player.getServer(), npcUuid)
                             || hiredNpcUuids.contains(npcUuid)) {
                         continue;
                     }
@@ -81,7 +82,9 @@ public class RequestIdleNPCsPacket {
                     if (addedNpcUuids.contains(npcUuid)) {
                         continue;
                     }
-                    if (hiredNpcUuids.contains(npcUuid) || NPCRestHandler.isLocked(npcUuid)) {
+                    if (hiredNpcUuids.contains(npcUuid)
+                            || NPCRestHandler.isLocked(npcUuid)
+                            || NPCDataManager.isNPCPregnantOrInLabor(player.getServer(), npcUuid)) {
                         continue;
                     }
 

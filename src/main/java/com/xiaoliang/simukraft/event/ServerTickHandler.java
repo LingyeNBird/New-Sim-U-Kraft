@@ -45,6 +45,8 @@ public class ServerTickHandler {
     // 中午生成NPC相关
     private static boolean noonSpawnTriggered = false; // 是否已经触发过中午生成
     private static final int NOON_SPAWN_TIME = 6000; // 中午12:00（游戏刻6000）触发生成
+    private static boolean marriageTriggered = false; // 是否已经触发过每日结婚检测
+    private static final int MARRIAGE_CHECK_TIME = 6200; // 中午生成后再检测，避免与生成流程抢同一tick
 
     // tick计数器，用于降低某些操作的频率
     private static int tickCounter = 0;
@@ -84,6 +86,12 @@ public class ServerTickHandler {
 
             // 检测中午时间并生成新NPC（如果有空闲住宅）
             detectNoonAndSpawnNPC(server, overworld);
+
+            // 中午生成结束后做一次低频婚姻检测
+            detectMarriageTime(server, overworld);
+
+            // 婚育系统按独立状态机推进，避免和工作/休息逻辑互相抢状态
+            NPCFamilyManager.tickServer(server, overworld);
 
             // 检测商业建筑补货时间
             detectCommercialRestockTime(server, overworld);
@@ -235,6 +243,30 @@ public class ServerTickHandler {
         com.xiaoliang.simukraft.job.jobs.commercialgeneric.CommercialWorkHandler.handleRestock(overworld, dayTime);
     }
 
+    private static void detectMarriageTime(MinecraftServer server, ServerLevel overworld) {
+        if (server == null || overworld == null) {
+            return;
+        }
+
+        long dayTime = overworld.getDayTime() % 24000L;
+        if (dayTime >= MARRIAGE_CHECK_TIME && dayTime < MARRIAGE_CHECK_TIME + 100) {
+            if (!marriageTriggered) {
+                marriageTriggered = true;
+                try {
+                    NPCMarriageManager.MarriagePair pair = NPCMarriageManager.tryRandomMarriage(server);
+                    if (pair != null) {
+                        LOGGER.info("每日婚姻检测成功：{} 与 {} 结婚",
+                                pair.maleNpc().getFullName(), pair.femaleNpc().getFullName());
+                    }
+                } catch (Exception e) {
+                    LOGGER.error("每日婚姻检测时发生错误", e);
+                }
+            }
+        } else if (dayTime >= MARRIAGE_CHECK_TIME + 100 && dayTime < 12000) {
+            marriageTriggered = false;
+        }
+    }
+
     /**
      * 服务器启动时调用
      */
@@ -244,6 +276,10 @@ public class ServerTickHandler {
         delayedPlayer = null;
         delayTicks = 0;
         startupRestoreDelayTicks = STARTUP_RESTORE_DELAY;
+        morningWorkTriggered = false;
+        noonSpawnTriggered = false;
+        marriageTriggered = false;
+        NPCFamilyManager.onServerStart();
         LOGGER.info("服务器启动，重置玩家睡眠状态跟踪器");
 
         // 商业建筑工作处理器启动

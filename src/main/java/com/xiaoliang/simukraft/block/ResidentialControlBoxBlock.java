@@ -35,10 +35,10 @@ public class ResidentialControlBoxBlock extends Block {
 
     @SuppressWarnings("null")
     private static BlockBehaviour.Properties createProperties() {
-        return BlockBehaviour.Properties.of()
+        return Objects.requireNonNull(BlockBehaviour.Properties.of()
                 .mapColor(MapColor.METAL)
                 .strength(1.0F)
-                .sound(SoundType.METAL);
+                .sound(SoundType.METAL));
     }
 
     @Override

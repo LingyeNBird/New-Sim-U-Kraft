@@ -71,6 +71,9 @@ import java.util.UUID;
 @SuppressWarnings({"null", "deprecation"})
 public class CustomEntity extends PathfinderMob {
     private static final double FAST_WORK_TELEPORT_DISTANCE_SQR = 256.0D;
+    private static final float CHILD_WIDTH = 0.35F;
+    private static final float CHILD_HEIGHT = 1.0F;
+    private static final long CHILD_GROWTH_DAYS = 3L;
     private static final EntityDataAccessor<String> DATA_NAME = SynchedEntityData.defineId(CustomEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_GENDER = SynchedEntityData.defineId(CustomEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_SKIN_PATH = SynchedEntityData.defineId(CustomEntity.class, EntityDataSerializers.STRING);
@@ -89,6 +92,7 @@ public class CustomEntity extends PathfinderMob {
     private static final EntityDataAccessor<Integer> DATA_LIFESPAN = SynchedEntityData.defineId(CustomEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Integer> DATA_HUNGER = SynchedEntityData.defineId(CustomEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Boolean> DATA_IS_HOMELESS = SynchedEntityData.defineId(CustomEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> DATA_IS_CHILD = SynchedEntityData.defineId(CustomEntity.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<String> DATA_WORK_NEED_DETAIL = SynchedEntityData.defineId(CustomEntity.class, EntityDataSerializers.STRING);
 
     private WorkStatus workStatus = WorkStatus.IDLE;
@@ -126,6 +130,8 @@ public class CustomEntity extends PathfinderMob {
     // 防止重复死亡标记
     private boolean isDying = false;
     private int hunger = 20;
+    private boolean isChildNpc = false;
+    private long childGrowthDueDay = -1L;
     private int statusLabelExpireTick = -1;
     @Nullable
     private String statusLabelExpireKey = null;
@@ -163,6 +169,7 @@ public class CustomEntity extends PathfinderMob {
         this.entityData.define(DATA_LIFESPAN, 75);
         this.entityData.define(DATA_HUNGER, 20);
         this.entityData.define(DATA_IS_HOMELESS, false);
+        this.entityData.define(DATA_IS_CHILD, false);
         this.entityData.define(DATA_WORK_NEED_DETAIL, "");
     }
 
@@ -171,6 +178,9 @@ public class CustomEntity extends PathfinderMob {
      */
     @Override
     public net.minecraft.world.entity.EntityDimensions getDimensions(net.minecraft.world.entity.Pose pose) {
+        if (this.isChildForm()) {
+            return net.minecraft.world.entity.EntityDimensions.scalable(CHILD_WIDTH, CHILD_HEIGHT);
+        }
         // 如果正在睡觉，扩大碰撞箱
         if (this.isSleeping()) {
             // 扩大碰撞箱：宽度从0.6扩大到1.2，高度从1.8保持1.8
@@ -474,6 +484,8 @@ public class CustomEntity extends PathfinderMob {
         tag.putInt("age", this.age);
         tag.putBoolean("isSick", this.isSick);
         tag.putInt("hunger", this.hunger);
+        tag.putBoolean("isChildNpc", this.isChildNpc);
+        tag.putLong("childGrowthDueDay", this.childGrowthDueDay);
         // 保存寿命数据（如果已初始化）
         if (this.lifespan > 0) {
             tag.putInt("lifespan", this.lifespan);
@@ -500,6 +512,8 @@ public class CustomEntity extends PathfinderMob {
         this.hireArrivalEffectPos = null;
         this.setInvisible(false);
         this.hunger = tag.contains("hunger") ? tag.getInt("hunger") : 20;
+        this.isChildNpc = tag.getBoolean("isChildNpc");
+        this.childGrowthDueDay = tag.contains("childGrowthDueDay") ? tag.getLong("childGrowthDueDay") : -1L;
         // 加载建造任务相关数据
         this.constructionProgress = tag.getInt("constructionProgress");
         this.currentBuildingName = tag.getString("currentBuildingName");
@@ -520,10 +534,13 @@ public class CustomEntity extends PathfinderMob {
             this.entityData.set(DATA_CITY_ID, cityId != null ? cityId.toString() : "");
             this.entityData.set(DATA_HUNGER, this.hunger);
             this.entityData.set(DATA_IS_HOMELESS, this.isHomeless);
+            this.entityData.set(DATA_IS_CHILD, this.isChildNpc);
 
             if ("builder".equals(job)) {
                 this.setItemInHand(this.getUsedItemHand(), new ItemStack(Items.COBBLESTONE));
             }
+        } else {
+            this.entityData.set(DATA_IS_CHILD, this.isChildNpc);
         }
         // 加载建造任务数据 - 优先使用JSON数据，NBT数据仅作为备份
         // 实际的恢复逻辑在BuilderWorkService.restoreConstructionTaskIfNeeded中处理
@@ -581,6 +598,7 @@ public class CustomEntity extends PathfinderMob {
         if (this.lifespan > 0) {
             this.entityData.set(DATA_LIFESPAN, this.lifespan);
         }
+        this.refreshDimensions();
     }
 
     @Override
@@ -737,6 +755,14 @@ public class CustomEntity extends PathfinderMob {
             }
         }
 
+        if (this.level().isClientSide) {
+            boolean syncedChildState = this.entityData.get(DATA_IS_CHILD);
+            if (this.isChildNpc != syncedChildState) {
+                this.isChildNpc = syncedChildState;
+                this.refreshDimensions();
+            }
+        }
+
         if (!this.level().isClientSide) {
             String currentJob = getJob();
             boolean aliveAndActive = !this.isDeadOrDying() && !isDying;
@@ -802,6 +828,7 @@ public class CustomEntity extends PathfinderMob {
             // 处理居民分配（每5秒检查一次）
             // 修复：死亡NPC不应该再分配住宅
             if (aliveAndActive && nameInitialized && fullName != null && !fullName.isEmpty()
+                    && !isChildForm()
                     && this.tickCount % ASSIGNMENT_INTERVAL == 0
             ) {
                 assignResidenceToNPC();
@@ -822,6 +849,10 @@ public class CustomEntity extends PathfinderMob {
 
             if (aliveAndActive && this.tickCount % 40 == 0) {
                 refreshWorkNeedDetail();
+            }
+
+            if (aliveAndActive && this.tickCount % 20 == 0 && this.level() instanceof ServerLevel serverLevel) {
+                checkChildGrowth(serverLevel.getServer());
             }
 
             if (statusLabelExpireTick > 0 && this.tickCount >= statusLabelExpireTick) {
@@ -1138,6 +1169,10 @@ public class CustomEntity extends PathfinderMob {
             return;
         }
 
+        if (isChildForm()) {
+            return;
+        }
+
         // 修复：死亡NPC不应该再分配住宅
         if (this.isDeadOrDying() || isDying) {
             return;
@@ -1178,6 +1213,49 @@ public class CustomEntity extends PathfinderMob {
      */
     public boolean isHomeless() {
         return this.entityData.get(DATA_IS_HOMELESS);
+    }
+
+    public boolean isChildForm() {
+        return this.entityData.get(DATA_IS_CHILD);
+    }
+
+    public void setChildForm(boolean childNpc, long growthDueDay) {
+        boolean previous = this.isChildNpc;
+        this.isChildNpc = childNpc;
+        this.childGrowthDueDay = childNpc ? growthDueDay : -1L;
+        this.entityData.set(DATA_IS_CHILD, childNpc);
+        if (previous != childNpc) {
+            this.refreshDimensions();
+        }
+    }
+
+    public void markAsNewborn(long currentDay) {
+        setChildForm(true, currentDay + CHILD_GROWTH_DAYS);
+        setNpcAge(1);
+    }
+
+    private void checkChildGrowth(@Nullable MinecraftServer server) {
+        if (!isChildForm() || server == null || childGrowthDueDay < 0L) {
+            return;
+        }
+        long currentDay = server.overworld() != null ? server.overworld().getDayTime() / 24000L : 0L;
+        if (currentDay < childGrowthDueDay) {
+            return;
+        }
+        growUpToAdult(server);
+    }
+
+    public void growUpToAdult(@Nullable MinecraftServer server) {
+        setChildForm(false, -1L);
+        setNpcAge(18);
+        setNoAi(false);
+        setStatusLabel(null);
+        if (isSleeping()) {
+            stopSleeping();
+        }
+        if (server != null) {
+            NPCDataManager.updateNPCAge(server, this.getUUID(), 18);
+        }
     }
 
 
@@ -1304,8 +1382,8 @@ public class CustomEntity extends PathfinderMob {
                 npcId = NameManager.getNextNPCId(serverLevel);
                 String npcIdStr = "npc" + npcId;
 
-                // 使用SkinManager生成性别和皮肤，确保50%男50%女，60个皮肤都能使用
-                gender = Gender.getRandom();
+                // 新市民进城时按 4:6 生成男女比例，其他无城市归属的调试/普通生成保持默认随机。
+                gender = this.cityId != null ? Gender.getRandom(0.4D) : Gender.getRandom();
                 skinPath = SkinManager.getRandomSkinPath(gender, new Random(), this.getUUID());
 
                 // 新生成的NPC总是设置为空闲状态
@@ -1355,7 +1433,7 @@ public class CustomEntity extends PathfinderMob {
                 populationData.syncToAllPlayers(serverLevel);
 
                 // 新NPC生成后，尝试为其分配空置的住宅
-                if (this.cityId != null) {
+                if (this.cityId != null && !isChildForm()) {
                     Simukraft.LOGGER.info("[CustomEntity] New NPC {} joined city {}, attempting residence assignment", fullName, cityId);
                     assignResidenceToNewNPC(serverLevel.getServer());
                 }
@@ -1855,6 +1933,12 @@ public class CustomEntity extends PathfinderMob {
         WorkSubState currentSubState = getWorkSubState();
         WorkStatus currentWorkStatus = getWorkStatus();
         String syncedStatusLabel = getStatusLabel();
+
+        if ("gui.npc.status.with_spouse".equals(syncedStatusLabel)
+                || "gui.npc.status.pregnant_home".equals(syncedStatusLabel)
+                || "gui.npc.status.in_labor".equals(syncedStatusLabel)) {
+            return Component.translatable(syncedStatusLabel);
+        }
 
         if (currentSubState == WorkSubState.RESTING) {
             // 休息状态下，不显示饥饿标签

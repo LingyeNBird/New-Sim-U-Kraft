@@ -23,12 +23,12 @@ public class WhiteCarpetBlock extends Block {
 
     @SuppressWarnings("null")
     private static BlockBehaviour.Properties createProperties() {
-        return BlockBehaviour.Properties.of()
+        return Objects.requireNonNull(BlockBehaviour.Properties.of()
                 .mapColor(MapColor.WOOL)
                 .strength(0.1F)
                 .sound(SoundType.WOOL)
                 .noOcclusion()
-                .noCollission();
+                .noCollission());
     }
 
     @Override

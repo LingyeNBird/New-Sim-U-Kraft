@@ -21,7 +21,6 @@ import javax.annotation.Nonnull;
 
 @SuppressWarnings("null")
 public class CustomEntityRenderer extends MobRenderer<CustomEntity, CustomEntityModel<CustomEntity>> {
-
     // : 缓存两种模型，根据皮肤文件名动态切换
     private final CustomEntityModel<CustomEntity> alexModel;
     private final CustomEntityModel<CustomEntity> steveModel;
@@ -60,11 +59,14 @@ public class CustomEntityRenderer extends MobRenderer<CustomEntity, CustomEntity
             this.model = this.alexModel;
         }
 
+        this.shadowRadius = entity.isChildForm() ? 0.25F : 0.5F;
+
         // 如果NPC处于不可见状态（传送中），跳过所有层的渲染（包括手持物品）
         if (entity.isInvisible()) {
             renderInvisibleEntity(entity, entityYaw, partialTicks, poseStack, buffer, packedLight);
             return;
         }
+
         super.render(entity, entityYaw, partialTicks, poseStack, buffer, packedLight);
     }
 

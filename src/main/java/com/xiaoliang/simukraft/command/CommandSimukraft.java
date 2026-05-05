@@ -13,7 +13,9 @@ import com.xiaoliang.simukraft.entity.WorkStatus;
 import com.xiaoliang.simukraft.init.ModEntities;
 import com.xiaoliang.simukraft.utils.FileUtils;
 import com.xiaoliang.simukraft.utils.NPCDataManager;
+import com.xiaoliang.simukraft.utils.NPCFamilyManager;
 import com.xiaoliang.simukraft.utils.NPCFoodMarket;
+import com.xiaoliang.simukraft.utils.NPCMarriageManager;
 import com.xiaoliang.simukraft.world.CityData;
 import com.xiaoliang.simukraft.world.OfficialInvitationService;
 import net.minecraft.commands.CommandSourceStack;
@@ -518,6 +520,35 @@ public class CommandSimukraft {
                         )
                     )
                 )
+                .then(Commands.literal("jh")
+                    .executes(context -> executeMarriageDebug(context.getSource())))
+                .then(Commands.literal("tt")
+                    .executes(context -> executeFamilyIntimacyDebug(context.getSource())))
+                .then(Commands.literal("hy")
+                    .executes(context -> executeFamilyPregnancyDebug(context.getSource())))
+                .then(Commands.literal("lc")
+                    .executes(context -> executeFamilyLaborDebug(context.getSource())))
+                .then(Commands.literal("fm")
+                    .executes(context -> executeFamilyBirthDebug(context.getSource())))
+                .then(Commands.literal("cla")
+                    .executes(context -> executeFamilyClearDebug(context.getSource())))
+        );
+
+        dispatcher.register(
+            Commands.literal("simu")
+                .requires(source -> source.hasPermission(2))
+                .then(Commands.literal("jh")
+                    .executes(context -> executeMarriageDebug(context.getSource())))
+                .then(Commands.literal("tt")
+                    .executes(context -> executeFamilyIntimacyDebug(context.getSource())))
+                .then(Commands.literal("hy")
+                    .executes(context -> executeFamilyPregnancyDebug(context.getSource())))
+                .then(Commands.literal("lc")
+                    .executes(context -> executeFamilyLaborDebug(context.getSource())))
+                .then(Commands.literal("fm")
+                    .executes(context -> executeFamilyBirthDebug(context.getSource())))
+                .then(Commands.literal("cla")
+                    .executes(context -> executeFamilyClearDebug(context.getSource())))
         );
 
         // 保留官方邀请命令（聊天栏点击用，不需要/simukraft前缀）
@@ -549,6 +580,120 @@ public class CommandSimukraft {
             }
         }
         return 0;
+    }
+
+    private static int executeMarriageDebug(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.literal("§c只能由玩家执行该命令"));
+            return 0;
+        }
+
+        NPCMarriageManager.MarriagePair pair = NPCMarriageManager.forceMarriageNearPlayer(player);
+        if (pair == null) {
+            source.sendFailure(Component.literal("§c玩家附近10格内没有可结婚的未婚男女NPC"));
+            return 0;
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "§a已促成测试结婚: " + pair.maleNpc().getFullName() + " + " + pair.femaleNpc().getFullName()
+        ), true);
+        return 1;
+    }
+
+    private static int executeFamilyIntimacyDebug(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.literal("§c只能由玩家执行该命令"));
+            return 0;
+        }
+
+        NPCFamilyManager.FamilyPair pair = NPCFamilyManager.forceIntimacyNearPlayer(player);
+        if (pair == null) {
+            source.sendFailure(Component.literal("§c玩家附近3格内没有可触发贴贴的已婚NPC，或其配偶未加载，或当前城市没有医院"));
+            return 0;
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "§a已开始贴贴测试: " + pair.maleNpc().getFullName() + " + " + pair.femaleNpc().getFullName()
+        ), true);
+        return 1;
+    }
+
+    private static int executeFamilyPregnancyDebug(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.literal("§c只能由玩家执行该命令"));
+            return 0;
+        }
+
+        CustomEntity femaleNpc = NPCFamilyManager.forcePregnancyNearPlayer(player);
+        if (femaleNpc == null) {
+            source.sendFailure(Component.literal("§c附近16格内没有可立即怀孕的已婚女NPC"));
+            return 0;
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "§a已让NPC立即怀孕: " + femaleNpc.getFullName()
+        ), true);
+        return 1;
+    }
+
+    private static int executeFamilyLaborDebug(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.literal("§c只能由玩家执行该命令"));
+            return 0;
+        }
+
+        CustomEntity femaleNpc = NPCFamilyManager.forceLaborNearPlayer(player);
+        if (femaleNpc == null) {
+            source.sendFailure(Component.literal("§c附近16格内没有处于怀孕中的女NPC"));
+            return 0;
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "§a已让NPC立即临产: " + femaleNpc.getFullName()
+        ), true);
+        return 1;
+    }
+
+    private static int executeFamilyBirthDebug(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.literal("§c只能由玩家执行该命令"));
+            return 0;
+        }
+
+        CustomEntity femaleNpc = NPCFamilyManager.forceBirthNearPlayer(player);
+        if (femaleNpc == null) {
+            source.sendFailure(Component.literal("§c附近16格内没有可立即送诊并分娩的怀孕女NPC"));
+            return 0;
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "§a已让NPC立即到诊所分娩: " + femaleNpc.getFullName()
+        ), true);
+        return 1;
+    }
+
+    private static int executeFamilyClearDebug(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.literal("§c只能由玩家执行该命令"));
+            return 0;
+        }
+
+        CustomEntity npc = NPCFamilyManager.clearFamilyStateNearPlayer(player);
+        if (npc == null) {
+            source.sendFailure(Component.literal("§c附近16格内没有可清除的婚育测试状态NPC"));
+            return 0;
+        }
+
+        source.sendSuccess(() -> Component.literal(
+                "§a已恢复为默认空闲状态: " + npc.getFullName()
+        ), true);
+        return 1;
     }
 
     private static int executeOfficial(CommandSourceStack source, boolean accepted, String invitationIdString) {

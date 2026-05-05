@@ -84,6 +84,18 @@ public class NetworkManager {
                 GetCityNamePacket::handle);
 
         INSTANCE.registerMessage(id++,
+                RequestNPCFamilyInfoPacket.class,
+                RequestNPCFamilyInfoPacket::encode,
+                RequestNPCFamilyInfoPacket::new,
+                RequestNPCFamilyInfoPacket::handle);
+
+        INSTANCE.registerMessage(id++,
+                NPCFamilyInfoResponsePacket.class,
+                NPCFamilyInfoResponsePacket::encode,
+                NPCFamilyInfoResponsePacket::new,
+                NPCFamilyInfoResponsePacket::handle);
+
+        INSTANCE.registerMessage(id++,
                 CityNameResponsePacket.class,
                 CityNameResponsePacket::encode,
                 CityNameResponsePacket::new,

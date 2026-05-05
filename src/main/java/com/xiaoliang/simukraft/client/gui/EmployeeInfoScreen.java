@@ -1,12 +1,14 @@
 package com.xiaoliang.simukraft.client.gui;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.xiaoliang.simukraft.client.NPCFamilyInfoCache;
 import com.xiaoliang.simukraft.client.NPCResidenceCache;
 import com.xiaoliang.simukraft.entity.CustomEntity;
 import com.xiaoliang.simukraft.entity.Gender;
 import com.xiaoliang.simukraft.init.ModSoundEvents;
 import com.xiaoliang.simukraft.network.EmploymentCommandPacket;
 import com.xiaoliang.simukraft.network.NetworkManager;
+import com.xiaoliang.simukraft.network.RequestNPCFamilyInfoPacket;
 import com.xiaoliang.simukraft.network.RequestNPCResidencePacket;
 import com.xiaoliang.simukraft.utils.SkinManager;
 import net.minecraft.client.Minecraft;
@@ -47,6 +49,7 @@ public class EmployeeInfoScreen extends AbstractTransitionScreen {
     private Button nextPageButton;
     private int currentPage = 0;
     private final Set<String> residenceRequested = new HashSet<>();
+    private final Set<UUID> familyInfoRequested = new HashSet<>();
 
     // 弹出式菜单相关
     private EmployeeInfo selectedEmployee = null;
@@ -572,7 +575,7 @@ public class EmployeeInfoScreen extends AbstractTransitionScreen {
             // 绘制婚姻状态
             guiGraphics.drawString(
                     nn(Minecraft.getInstance().font),
-                    Component.translatable("gui.npc_interaction.marriage").getString() + Component.translatable("gui.npc_marriage.single").getString(),
+                    Component.translatable("gui.npc_interaction.marriage").getString() + getMarriageText(employee.uuid()),
                     this.getX() + 50,
                     this.getY() + 64,
                     0x666666
@@ -608,6 +611,21 @@ public class EmployeeInfoScreen extends AbstractTransitionScreen {
             return Component.translatable("gui.npc_interaction.has_residence_unknown").getString();
         }
         return Component.translatable("gui.npc_interaction.no_residence").getString();
+    }
+
+    @Nonnull
+    private String getMarriageText(@Nonnull UUID npcUuid) {
+        NPCFamilyInfoCache.FamilyInfo cachedInfo = NPCFamilyInfoCache.get(npcUuid);
+        if (cachedInfo == null) {
+            if (familyInfoRequested.add(npcUuid)) {
+                NetworkManager.INSTANCE.sendToServer(new RequestNPCFamilyInfoPacket(npcUuid));
+            }
+            return Component.translatable("gui.npc_interaction.loading").getString();
+        }
+        if (cachedInfo.spouseName() == null || cachedInfo.spouseName().isBlank()) {
+            return Component.translatable("gui.npc_marriage.single").getString();
+        }
+        return Component.translatable("gui.npc_marriage.married_format", cachedInfo.spouseName()).getString();
     }
 
     /**

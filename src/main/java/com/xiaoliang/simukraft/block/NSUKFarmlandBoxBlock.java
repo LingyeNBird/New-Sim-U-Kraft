@@ -28,10 +28,10 @@ public class NSUKFarmlandBoxBlock extends Block {
 
     @SuppressWarnings("null")
     private static BlockBehaviour.Properties createProperties() {
-        return BlockBehaviour.Properties.of()
+        return Objects.requireNonNull(BlockBehaviour.Properties.of()
                 .mapColor(MapColor.WOOD)
                 .strength(0.8F)
-                .sound(SoundType.WOOD);
+                .sound(SoundType.WOOD));
     }
 
     // 音效 - 放置时播放农田盒专用音效

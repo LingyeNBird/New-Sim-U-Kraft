@@ -15,7 +15,12 @@ public enum Gender {
     }
 
     public static Gender getRandom() {
-        return Math.random() < 0.5 ? MALE : FEMALE;
+        return getRandom(0.5D);
+    }
+
+    public static Gender getRandom(double maleChance) {
+        double normalizedMaleChance = Math.max(0.0D, Math.min(1.0D, maleChance));
+        return Math.random() < normalizedMaleChance ? MALE : FEMALE;
     }
 
     public static Gender fromString(String gender) {

@@ -995,6 +995,9 @@ public class NPCRestHandler {
             if (npc == null || !npc.isAlive()) continue;
 
             UUID npcUuid = npc.getUUID();
+            if (NPCFamilyManager.isNpcBusyWithFamily(npcUuid)) {
+                continue;
+            }
             RestData restData = restingNPCs.get(npcUuid);
             GoingToWorkData workData = goingToWorkNPCs.get(npcUuid);
 
@@ -1548,6 +1551,10 @@ public class NPCRestHandler {
         npc.startSleeping(headPos);
     }
 
+    public static void tryStartSleepingForFamily(CustomEntity npc, BlockPos bedPos, ServerLevel level) {
+        tryStartSleeping(npc, bedPos, level);
+    }
+
     /**
      * 获取床头位置（根据床尾位置计算床头位置）
      * @param level 世界
@@ -1754,6 +1761,10 @@ public class NPCRestHandler {
         }
 
         return bestBedPos;
+    }
+
+    public static BlockPos findFamilyBed(ServerLevel level, BlockPos homePos, CustomEntity npc) {
+        return findNearbyBed(level, homePos, npc);
     }
 
     /**
@@ -2248,6 +2259,10 @@ public class NPCRestHandler {
 
         // 住宅归属必须以住宅控制盒 resident_uuid 绑定为准，避免按名字匹配回错家。
         return ResidentManager.getNPCResidenceControlBoxPos(server, npc.getUUID());
+    }
+
+    public static BlockPos getFamilyHomePosition(CustomEntity npc, MinecraftServer server) {
+        return getNPCHomePosition(npc, server);
     }
 
     /**

@@ -96,6 +96,9 @@ public class NPCDataManager {
     public record NPCBasicData(String name, String cityId, String skinPath) {
     }
 
+    public record NPCPregnancyData(String stage, long startDay) {
+    }
+
     private static void startSaveThread() {
         if (saveThreadRunning) return;
         saveThreadRunning = true;
@@ -825,6 +828,245 @@ public class NPCDataManager {
             LOGGER.error("Failed to get NPC ID by UUID: " + uuid, e);
         }
         return null;
+    }
+
+    public static UUID getNPCSpouseUuid(MinecraftServer server, UUID uuid) {
+        if (server == null || uuid == null) {
+            return null;
+        }
+        try {
+            Path worldDir = getWorldPath(server);
+            Path npcDir = worldDir.resolve(FileUtils.MODE_DIR).resolve(NPC_DIR);
+            Path npcFile = npcDir.resolve(NPC_FILE);
+
+            if (!Files.exists(npcFile)) {
+                return null;
+            }
+
+            JsonArray npcArray;
+            try (Reader reader = Files.newBufferedReader(npcFile, StandardCharsets.UTF_8)) {
+                npcArray = JsonParser.parseReader(reader).getAsJsonArray();
+            } catch (JsonSyntaxException e) {
+                LOGGER.warn("Corrupted NPC data file, returning null spouse");
+                return null;
+            }
+
+            for (JsonElement element : npcArray) {
+                JsonObject npcObj = element.getAsJsonObject();
+                if (!npcObj.has("uuid") || !uuid.toString().equals(npcObj.get("uuid").getAsString())) {
+                    continue;
+                }
+                if (!npcObj.has("spouseUuid")) {
+                    return null;
+                }
+                try {
+                    return UUID.fromString(npcObj.get("spouseUuid").getAsString());
+                } catch (IllegalArgumentException e) {
+                    return null;
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to get NPC spouse UUID: " + uuid, e);
+        }
+        return null;
+    }
+
+    public static Map<UUID, UUID> getAllNPCSpouseUuids(MinecraftServer server) {
+        Map<UUID, UUID> spouseMap = new HashMap<>();
+        if (server == null) {
+            return spouseMap;
+        }
+        try {
+            Path worldDir = getWorldPath(server);
+            Path npcDir = worldDir.resolve(FileUtils.MODE_DIR).resolve(NPC_DIR);
+            Path npcFile = npcDir.resolve(NPC_FILE);
+
+            if (!Files.exists(npcFile)) {
+                return spouseMap;
+            }
+
+            JsonArray npcArray;
+            try (Reader reader = Files.newBufferedReader(npcFile, StandardCharsets.UTF_8)) {
+                npcArray = JsonParser.parseReader(reader).getAsJsonArray();
+            } catch (JsonSyntaxException e) {
+                LOGGER.warn("Corrupted NPC data file, returning empty spouse map");
+                return spouseMap;
+            }
+
+            for (JsonElement element : npcArray) {
+                JsonObject npcObj = element.getAsJsonObject();
+                if (!npcObj.has("uuid") || !npcObj.has("spouseUuid")) {
+                    continue;
+                }
+                try {
+                    spouseMap.put(
+                            UUID.fromString(npcObj.get("uuid").getAsString()),
+                            UUID.fromString(npcObj.get("spouseUuid").getAsString())
+                    );
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to get all NPC spouse UUIDs", e);
+        }
+        return spouseMap;
+    }
+
+    public static boolean setNPCSpouses(MinecraftServer server, UUID firstUuid, UUID secondUuid) {
+        if (server == null || firstUuid == null || secondUuid == null || firstUuid.equals(secondUuid)) {
+            return false;
+        }
+        try {
+            Path worldDir = getWorldPath(server);
+            Path npcDir = worldDir.resolve(FileUtils.MODE_DIR).resolve(NPC_DIR);
+            Path npcFile = npcDir.resolve(NPC_FILE);
+
+            if (!Files.exists(npcDir)) {
+                Files.createDirectories(npcDir);
+            }
+            if (!Files.exists(npcFile)) {
+                return false;
+            }
+
+            JsonArray npcArray;
+            try (Reader reader = Files.newBufferedReader(npcFile, StandardCharsets.UTF_8)) {
+                npcArray = JsonParser.parseReader(reader).getAsJsonArray();
+            } catch (JsonSyntaxException e) {
+                LOGGER.warn("Corrupted NPC data file, unable to set spouse data");
+                return false;
+            }
+
+            boolean firstFound = false;
+            boolean secondFound = false;
+            for (JsonElement element : npcArray) {
+                JsonObject npcObj = element.getAsJsonObject();
+                if (!npcObj.has("uuid")) {
+                    continue;
+                }
+                String uuidString = npcObj.get("uuid").getAsString();
+                if (firstUuid.toString().equals(uuidString)) {
+                    npcObj.addProperty("spouseUuid", secondUuid.toString());
+                    firstFound = true;
+                } else if (secondUuid.toString().equals(uuidString)) {
+                    npcObj.addProperty("spouseUuid", firstUuid.toString());
+                    secondFound = true;
+                }
+            }
+
+            if (!firstFound || !secondFound) {
+                return false;
+            }
+
+            try (Writer writer = Files.newBufferedWriter(npcFile, StandardCharsets.UTF_8)) {
+                gson.toJson(npcArray, writer);
+            }
+            return true;
+        } catch (Exception e) {
+            LOGGER.error("Failed to set NPC spouses: {} <-> {}", firstUuid, secondUuid, e);
+            return false;
+        }
+    }
+
+    public static NPCPregnancyData getNPCPregnancyData(MinecraftServer server, UUID uuid) {
+        if (server == null || uuid == null) {
+            return null;
+        }
+        try {
+            Path worldDir = getWorldPath(server);
+            Path npcDir = worldDir.resolve(FileUtils.MODE_DIR).resolve(NPC_DIR);
+            Path npcFile = npcDir.resolve(NPC_FILE);
+            if (!Files.exists(npcFile)) {
+                return null;
+            }
+
+            JsonArray npcArray;
+            try (Reader reader = Files.newBufferedReader(npcFile, StandardCharsets.UTF_8)) {
+                npcArray = JsonParser.parseReader(reader).getAsJsonArray();
+            } catch (JsonSyntaxException e) {
+                LOGGER.warn("Corrupted NPC data file, returning null pregnancy data");
+                return null;
+            }
+
+            for (JsonElement element : npcArray) {
+                JsonObject npcObj = element.getAsJsonObject();
+                if (!npcObj.has("uuid") || !uuid.toString().equals(npcObj.get("uuid").getAsString())) {
+                    continue;
+                }
+                String stage = npcObj.has("pregnancyStage") ? npcObj.get("pregnancyStage").getAsString() : "";
+                if (stage == null || stage.isBlank() || "none".equalsIgnoreCase(stage)) {
+                    return null;
+                }
+                long startDay = npcObj.has("pregnancyStartDay") ? npcObj.get("pregnancyStartDay").getAsLong() : -1L;
+                return new NPCPregnancyData(stage, startDay);
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to get NPC pregnancy data: " + uuid, e);
+        }
+        return null;
+    }
+
+    public static boolean isNPCPregnantOrInLabor(MinecraftServer server, UUID uuid) {
+        NPCPregnancyData data = getNPCPregnancyData(server, uuid);
+        return data != null && data.stage() != null && !data.stage().isBlank() && !"none".equalsIgnoreCase(data.stage());
+    }
+
+    public static boolean setNPCPregnancyData(MinecraftServer server, UUID uuid, String stage, long startDay) {
+        if (server == null || uuid == null) {
+            return false;
+        }
+        try {
+            Path worldDir = getWorldPath(server);
+            Path npcDir = worldDir.resolve(FileUtils.MODE_DIR).resolve(NPC_DIR);
+            Path npcFile = npcDir.resolve(NPC_FILE);
+            if (!Files.exists(npcDir)) {
+                Files.createDirectories(npcDir);
+            }
+            if (!Files.exists(npcFile)) {
+                return false;
+            }
+
+            JsonArray npcArray;
+            try (Reader reader = Files.newBufferedReader(npcFile, StandardCharsets.UTF_8)) {
+                npcArray = JsonParser.parseReader(reader).getAsJsonArray();
+            } catch (JsonSyntaxException e) {
+                LOGGER.warn("Corrupted NPC data file, unable to set pregnancy data");
+                return false;
+            }
+
+            boolean found = false;
+            for (JsonElement element : npcArray) {
+                JsonObject npcObj = element.getAsJsonObject();
+                if (!npcObj.has("uuid") || !uuid.toString().equals(npcObj.get("uuid").getAsString())) {
+                    continue;
+                }
+                found = true;
+                if (stage == null || stage.isBlank() || "none".equalsIgnoreCase(stage)) {
+                    npcObj.remove("pregnancyStage");
+                    npcObj.remove("pregnancyStartDay");
+                } else {
+                    npcObj.addProperty("pregnancyStage", stage);
+                    npcObj.addProperty("pregnancyStartDay", startDay);
+                }
+                break;
+            }
+
+            if (!found) {
+                return false;
+            }
+
+            try (Writer writer = Files.newBufferedWriter(npcFile, StandardCharsets.UTF_8)) {
+                gson.toJson(npcArray, writer);
+            }
+            return true;
+        } catch (Exception e) {
+            LOGGER.error("Failed to set NPC pregnancy data: " + uuid, e);
+            return false;
+        }
+    }
+
+    public static String getNPCSpouseName(MinecraftServer server, UUID uuid) {
+        UUID spouseUuid = getNPCSpouseUuid(server, uuid);
+        return spouseUuid != null ? getNPCNameByUUID(server, spouseUuid) : null;
     }
 
     /**

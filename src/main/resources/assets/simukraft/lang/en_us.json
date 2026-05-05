@@ -201,6 +201,7 @@
   "gui.npc.overhead.marriage": "Marriage: %s",
   "gui.npc.overhead.hunger": "Hunger: %s",
   "gui.npc_marriage.single": "Single",
+  "gui.npc_marriage.married_format": "Married(%s)",
 
   "gui.npc_card.identity_card": "ID Card",
   "gui.npc_card.work_card": "Work Permit",
@@ -823,6 +824,9 @@
   "gui.npc.status.going_home": "Heading home",
   "gui.npc.status.at_home": "Resting at home",
   "gui.npc.status.going_to_work": "Heading to work",
+  "gui.npc.status.with_spouse": "Being close with spouse",
+  "gui.npc.status.pregnant_home": "Pregnant at home",
+  "gui.npc.status.in_labor": "In labor",
   "gui.npc.status.hungry": "Hungry",
   "gui.npc.status.working_task": "Working",
   "gui.npc.status.selling": "Selling",

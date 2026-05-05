@@ -9,6 +9,8 @@ import org.apache.logging.log4j.Logger;
 import javax.annotation.Nullable;
 
 import java.io.IOException;
+import java.net.JarURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,7 +19,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 public class BuildingDataManager {
     private static final Logger LOGGER = LogManager.getLogger();
@@ -124,6 +128,23 @@ public class BuildingDataManager {
         }
     }
     
+    private static Path findExistingCategoryPath(Path workingDir, Path projectRoot, String category) {
+        Path[] possiblePaths = {
+            workingDir.resolve(SIMUKRAFT_BUILDING_FOLDER).resolve(category),
+            projectRoot.resolve("src/main/resources").resolve(BUILDING_ROOT_PATH).resolve(category),
+            workingDir.resolve("..").resolve("src").resolve("main").resolve("resources").resolve(BUILDING_ROOT_PATH).resolve(category),
+            projectRoot.resolve("build/resources/main").resolve(BUILDING_ROOT_PATH).resolve(category),
+            Paths.get(System.getProperty("user.dir"), "src", "main", "resources", BUILDING_ROOT_PATH, category)
+        };
+
+        for (Path path : possiblePaths) {
+            if (Files.exists(path) && Files.isDirectory(path)) {
+                return path;
+            }
+        }
+        return null;
+    }
+
     public static List<BuildingInfo> getBuildingsByCategory(String category) {
         // menglannnn: 检查缓存 - 修复缓存为空的问题
         // 如果缓存已初始化且该类别的缓存存在且不为空，直接返回
@@ -144,27 +165,7 @@ public class BuildingDataManager {
         try {
             Path workingDir = Paths.get("").toAbsolutePath();
             Path projectRoot = resolveProjectRoot(workingDir);
-            Path simukraftBuildingPath = workingDir.resolve(SIMUKRAFT_BUILDING_FOLDER).resolve(category);
-
-            Path targetPath = null;
-
-            if (Files.exists(simukraftBuildingPath) && Files.isDirectory(simukraftBuildingPath)) {
-                targetPath = simukraftBuildingPath;
-            } else {
-                Path[] possiblePaths = {
-                    projectRoot.resolve("src/main/resources").resolve(BUILDING_ROOT_PATH).resolve(category),
-                    workingDir.resolve("..").resolve("src").resolve("main").resolve("resources").resolve(BUILDING_ROOT_PATH).resolve(category),
-                    projectRoot.resolve("build/resources/main").resolve(BUILDING_ROOT_PATH).resolve(category),
-                    Paths.get(System.getProperty("user.dir"), "src", "main", "resources", BUILDING_ROOT_PATH, category)
-                };
-
-                for (Path path : possiblePaths) {
-                    if (Files.exists(path) && Files.isDirectory(path)) {
-                        targetPath = path;
-                        break;
-                    }
-                }
-            }
+            Path targetPath = findExistingCategoryPath(workingDir, projectRoot, category);
 
             if (targetPath != null) {
                 if (!Files.exists(targetPath)) {
@@ -230,86 +231,150 @@ public class BuildingDataManager {
         return buildings;
     }
 
+    private static BuildingInfo parseBuildingData(Map<String, String> data, String category, String fileName) {
+        String name = data.getOrDefault("name", Component.translatable("building.unknown.name").getString());
+        String size = data.getOrDefault("size", Component.translatable("building.unknown.size").getString());
+        String amount = data.getOrDefault("amount", Component.translatable("building.unknown.price").getString());
+        String author = data.getOrDefault("author", Component.translatable("building.unknown.author").getString());
+        String description = data.getOrDefault("description", Component.translatable("building.unknown.description").getString());
+        String jobType = data.getOrDefault("job_type", null);
+
+        List<String> tags = new ArrayList<>();
+        String tagsStr = data.get("tags");
+        if (tagsStr != null && !tagsStr.isEmpty()) {
+            for (String tag : tagsStr.split(",")) {
+                tags.add(tag.trim());
+            }
+        }
+
+        String baseName = fileName.replace(".sk", "");
+        String litematicFileName = baseName + ".litematic";
+        return new BuildingInfo(name, size, amount, author, description, category,
+                fileName, litematicFileName, jobType, tags);
+    }
+
+    private static Map<String, String> parseBuildingLines(List<String> lines) {
+        Map<String, String> data = new HashMap<>();
+        for (String line : lines) {
+            line = line.trim();
+            if (!line.contains(":")) {
+                continue;
+            }
+            String[] parts = line.split(":", 2);
+            if (parts.length == 2) {
+                String key = parts[0].trim().replace("\uFEFF", "").trim();
+                String value = parts[1].trim();
+                data.put(key, value);
+            }
+        }
+        return data;
+    }
+
     private static BuildingInfo parseBuildingFile(Path skFilePath, String category) throws IOException {
         try {
             List<String> lines = Files.readAllLines(skFilePath, StandardCharsets.UTF_8);
-            Map<String, String> data = new HashMap<>();
-
-            for (String line : lines) {
-                line = line.trim();
-                if (line.contains(":")) {
-                    String[] parts = line.split(":", 2);
-                    if (parts.length == 2) {
-                        String key = parts[0].trim().replace("\uFEFF", "").trim();
-                        String value = parts[1].trim();
-                        data.put(key, value);
-                    }
-                }
-            }
-
-            String name = data.getOrDefault("name", Component.translatable("building.unknown.name").getString());
-            String size = data.getOrDefault("size", Component.translatable("building.unknown.size").getString());
-            String amount = data.getOrDefault("amount", Component.translatable("building.unknown.price").getString());
-            String author = data.getOrDefault("author", Component.translatable("building.unknown.author").getString());
-            String description = data.getOrDefault("description", Component.translatable("building.unknown.description").getString());
-            String jobType = data.getOrDefault("job_type", null);
-
-            List<String> tags = new ArrayList<>();
-            String tagsStr = data.get("tags");
-            if (tagsStr != null && !tagsStr.isEmpty()) {
-                for (String tag : tagsStr.split(",")) {
-                    tags.add(tag.trim());
-                }
-            }
-
-            String baseName = skFilePath.getFileName().toString().replace(".sk", "");
-            String litematicFileName = baseName + ".litematic";
-
-            return new BuildingInfo(name, size, amount, author, description, category,
-                                  skFilePath.getFileName().toString(), litematicFileName, jobType, tags);
-
+            Map<String, String> data = parseBuildingLines(lines);
+            return parseBuildingData(data, category, skFilePath.getFileName().toString());
         } catch (Exception e) {
             LOGGER.error("[BuildingDataManager] 解析文件 {} 失败: {}", skFilePath, e.getMessage());
             throw e;
         }
     }
 
+    private static List<String> listCategoryResourceFiles(String category) {
+        List<String> fileNames = loadCategoryManifest(category);
+        if (!fileNames.isEmpty()) {
+            return fileNames;
+        }
+
+        List<String> jarFileNames = new CopyOnWriteArrayList<>();
+        String resourceDir = BUILDING_ROOT_PATH + "/" + category;
+
+        try {
+            URL resourceUrl = BuildingDataManager.class.getClassLoader().getResource(resourceDir);
+            if (resourceUrl != null && "jar".equalsIgnoreCase(resourceUrl.getProtocol())) {
+                JarURLConnection connection = (JarURLConnection) resourceUrl.openConnection();
+                try (java.util.jar.JarFile jarFile = connection.getJarFile()) {
+                    jarFile.stream().forEach(entry -> {
+                        String name = entry.getName();
+                        if (!name.startsWith(resourceDir + "/") || entry.isDirectory()) {
+                            return;
+                        }
+                        String relative = name.substring(resourceDir.length() + 1);
+                        if (!relative.contains("/")) {
+                            jarFileNames.add(relative);
+                        }
+                    });
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error("[BuildingDataManager] 获取资源目录 '{}' 失败: {}", resourceDir, e.getMessage());
+        }
+
+        if (!jarFileNames.isEmpty()) {
+            return jarFileNames;
+        }
+
+        List<String> fallbackFileNames = new ArrayList<>();
+        try {
+            Path workingDir = Paths.get("").toAbsolutePath();
+            Path projectRoot = resolveProjectRoot(workingDir);
+            Path fallbackDir = projectRoot.resolve("src/main/resources").resolve(resourceDir);
+            if (Files.exists(fallbackDir) && Files.isDirectory(fallbackDir)) {
+                try (Stream<Path> pathStream = Files.list(fallbackDir)) {
+                    pathStream.filter(Files::isRegularFile)
+                            .map(path -> path.getFileName().toString())
+                            .forEach(fallbackFileNames::add);
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error("[BuildingDataManager] 文件系统后备枚举资源目录 '{}' 失败: {}", resourceDir, e.getMessage());
+        }
+
+        return fallbackFileNames;
+    }
+
+    private static List<String> loadCategoryManifest(String category) {
+        List<String> fileNames = new ArrayList<>();
+        String manifestPath = BUILDING_ROOT_PATH + "/" + category + "/_files.txt";
+        try (java.io.InputStream inputStream = BuildingDataManager.class.getClassLoader().getResourceAsStream(manifestPath)) {
+            if (inputStream == null) {
+                return fileNames;
+            }
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String fileName = line.trim();
+                    if (!fileName.isEmpty() && !fileName.startsWith("#")) {
+                        fileNames.add(fileName);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error("[BuildingDataManager] 读取资源清单 '{}' 失败: {}", manifestPath, e.getMessage());
+        }
+        return fileNames;
+    }
+
     private static List<BuildingInfo> loadFromClasspathFallback(String category) {
         List<BuildingInfo> buildings = new ArrayList<>();
         
         try {
-            // 获取类路径中的资源列表
-            java.net.URL resourceUrl = BuildingDataManager.class.getClassLoader()
-                .getResource(BUILDING_ROOT_PATH + "/" + category);
-            
-            if (resourceUrl != null) {
-                // 尝试列出目录内容
-                java.io.InputStream is = BuildingDataManager.class.getClassLoader()
-                    .getResourceAsStream(BUILDING_ROOT_PATH + "/" + category);
-                
-                if (is != null) {
-                    java.io.BufferedReader reader = new java.io.BufferedReader(
-                        new java.io.InputStreamReader(is));
-                    
-                    String fileName;
-                    while ((fileName = reader.readLine()) != null) {
-                        if (fileName.endsWith(".sk")) {
-                            java.io.InputStream fileStream = BuildingDataManager.class.getClassLoader()
-                                .getResourceAsStream(BUILDING_ROOT_PATH + "/" + category + "/" + fileName);
-                            
-                            if (fileStream != null) {
-                                try {
-                                    BuildingInfo info = parseBuildingFromStream(fileStream, category, fileName);
-                                    if (info != null) {
-                                        buildings.add(info);
-                                    }
-                                } finally {
-                                    fileStream.close();
-                                }
-                            }
+            for (String fileName : listCategoryResourceFiles(category)) {
+                if (!fileName.endsWith(".sk")) {
+                    continue;
+                }
+                java.io.InputStream fileStream = BuildingDataManager.class.getClassLoader()
+                    .getResourceAsStream(BUILDING_ROOT_PATH + "/" + category + "/" + fileName);
+                if (fileStream != null) {
+                    try {
+                        BuildingInfo info = parseBuildingFromStream(fileStream, category, fileName);
+                        if (info != null) {
+                            buildings.add(info);
                         }
+                    } finally {
+                        fileStream.close();
                     }
-                    reader.close();
                 }
             }
         } catch (Exception e) {
@@ -323,45 +388,17 @@ public class BuildingDataManager {
         try {
             java.io.BufferedReader reader = new java.io.BufferedReader(
                 new java.io.InputStreamReader(inputStream, StandardCharsets.UTF_8));
-            
-            Map<String, String> data = new HashMap<>();
+
+            List<String> lines = new ArrayList<>();
             String line;
-            
             while ((line = reader.readLine()) != null) {
-                line = line.trim();
-                if (line.contains(":")) {
-                    String[] parts = line.split(":", 2);
-                    if (parts.length == 2) {
-                        String key = parts[0].trim().replace("\uFEFF", "").trim();
-                        String value = parts[1].trim();
-                        data.put(key, value);
-                    }
-                }
+                lines.add(line);
             }
             reader.close();
-            
-            String name = data.getOrDefault("name", Component.translatable("building.unknown.name").getString());
-            String size = data.getOrDefault("size", Component.translatable("building.unknown.size").getString());
-            String amount = data.getOrDefault("amount", Component.translatable("building.unknown.price").getString());
-            String author = data.getOrDefault("author", Component.translatable("building.unknown.author").getString());
-            String description = data.getOrDefault("description", Component.translatable("building.unknown.description").getString());
-            String jobType = data.getOrDefault("job_type", null);
-            
-            // 解析标签
-            List<String> tags = new ArrayList<>();
-            String tagsStr = data.get("tags");
-            if (tagsStr != null && !tagsStr.isEmpty()) {
-                for (String tag : tagsStr.split(",")) {
-                    tags.add(tag.trim());
-                }
-            }
-            
-            String baseName = fileName.replace(".sk", "");
-            String litematicFileName = baseName + ".litematic";
-            
-            return new BuildingInfo(name, size, amount, author, description, category, 
-                                   fileName, litematicFileName, jobType, tags);
-            
+
+            Map<String, String> data = parseBuildingLines(lines);
+            return parseBuildingData(data, category, fileName);
+
         } catch (Exception e) {
             LOGGER.error("[BuildingDataManager] ERROR parsing from stream: {}", e.getMessage());
             return null;
@@ -551,33 +588,12 @@ public class BuildingDataManager {
         try {
             Files.createDirectories(targetPath);
 
-            // menglannnn: 动态扫描类路径中的建筑文件，替代硬编码列表
-            java.net.URL resourceUrl = BuildingDataManager.class.getClassLoader()
-                .getResource(BUILDING_ROOT_PATH + "/" + category);
-
-            if (resourceUrl == null) {
-                LOGGER.warn("[BuildingDataManager] 类路径中未找到类别 '{}' 的资源目录", category);
-                return;
-            }
-
-            java.io.InputStream is = BuildingDataManager.class.getClassLoader()
-                .getResourceAsStream(BUILDING_ROOT_PATH + "/" + category);
-
-            if (is == null) {
-                LOGGER.warn("[BuildingDataManager] 无法读取类别 '{}' 的目录内容", category);
-                return;
-            }
-
-            java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(is));
-            String fileName;
             int copyCount = 0;
-
-            while ((fileName = reader.readLine()) != null) {
-                fileName = fileName.trim();
-                if (fileName.isEmpty()) {
-                    continue;
-                }
-
+            List<String> resourceFiles = listCategoryResourceFiles(category);
+            if (resourceFiles.isEmpty()) {
+                LOGGER.warn("[BuildingDataManager] 类别 '{}' 未枚举到任何资源文件，复制将跳过", category);
+            }
+            for (String fileName : resourceFiles) {
                 String resourcePath = BUILDING_ROOT_PATH + "/" + category + "/" + fileName;
                 Path targetFilePath = targetPath.resolve(fileName);
 
@@ -599,7 +615,6 @@ public class BuildingDataManager {
                     LOGGER.error("[BuildingDataManager] 无法从类路径加载资源: {}", resourcePath);
                 }
             }
-            reader.close();
 
             LOGGER.info("[BuildingDataManager] 从类路径复制类别 '{}' 完成，共复制 {} 个文件", category, copyCount);
 

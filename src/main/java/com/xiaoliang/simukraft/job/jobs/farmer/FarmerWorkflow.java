@@ -58,5 +58,11 @@ public final class FarmerWorkflow implements JobWorkflow {
             npc.setWorkStatus(WorkStatus.WORKING);
             npc.setWorking(true);
         }
+        // menglannnn: 修复午休后无法恢复工作的问题
+        // 如果NPC处于午休状态，将其恢复为工作状态
+        if (npc.getWorkSubState() == com.xiaoliang.simukraft.entity.WorkSubState.LUNCH_BREAK) {
+            npc.setWorkSubState(com.xiaoliang.simukraft.entity.WorkSubState.WORKING);
+            npc.setWorking(true);
+        }
     }
 }

@@ -11,17 +11,59 @@
   "recipes": [
     {
       "recipeId": "_default",
-      "recipeName": "默认配方",
-      "heldItem": "",
+      "recipeName": "鳕鱼生产",
+      "heldItem": "minecraft:fishing_rod",
       "materials": [],
-      "products": []
+      "products": [
+        {
+          "item": "minecraft:cod",
+          "baseAmount": 1,
+          "randomRange": 0,
+          "probability": 0.5
+        }
+      ]
     },
     {
       "recipeId": "building_recipe2",
-      "recipeName": "配方2",
-      "heldItem": "",
+      "recipeName": "鲑鱼生产",
+      "heldItem": "minecraft:fishing_rod",
       "materials": [],
-      "products": []
+      "products": [
+        {
+          "item": "minecraft:salmon",
+          "baseAmount": 1,
+          "randomRange": 0,
+          "probability": 0.5
+        }
+      ]
+    },
+    {
+      "recipeId": "fishersHouse_recipe3",
+      "recipeName": "混合生产",
+      "heldItem": "minecraft:fishing_rod",
+      "materials": [],
+      "products": [
+        {
+          "item": "minecraft:salmon",
+          "baseAmount": 1,
+          "randomRange": 0,
+          "probability": 0.25
+        },
+        {
+          "item": "minecraft:cod",
+          "baseAmount": 1,
+          "randomRange": 0,
+          "probability": 0.25
+        }
+      ]
+    }
+  ],
+  "products": [
+    {
+      "item": "minecraft:cod",
+      "baseAmount": 1,
+      "randomRange": 0,
+      "probability": 0.5
     }
   ],
   "spawnEntity": {

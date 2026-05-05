@@ -9,7 +9,7 @@
     "start": 100,
     "end": 12000
   },
-  "restockTime": 24000,
+  "restockTime": 101,
   "requireMaterialsForSale": true,
   "materials": [
     {
@@ -40,8 +40,16 @@
       "maxStock": 32,
       "restockAmount": 16,
       "retail": true,
-      "requiredMaterial": "minecraft:bread",
-      "requiredMaterialCount": 1
+      "requiredMaterials": [
+        {
+          "item": "minecraft:bread",
+          "count": 1
+        },
+        {
+          "item": "simukraft:cheese_chunk",
+          "count": 1
+        }
+      ]
     },
     {
       "item": "simukraft:hamburger",
@@ -49,8 +57,16 @@
       "maxStock": 32,
       "restockAmount": 16,
       "retail": true,
-      "requiredMaterial": "minecraft:bread",
-      "requiredMaterialCount": 1
+      "requiredMaterials": [
+        {
+          "item": "minecraft:bread",
+          "count": 1
+        },
+        {
+          "item": "minecraft:beef",
+          "count": 1
+        }
+      ]
     },
     {
       "item": "simukraft:french_fries",
@@ -58,8 +74,12 @@
       "maxStock": 32,
       "restockAmount": 16,
       "retail": true,
-      "requiredMaterial": "minecraft:potato",
-      "requiredMaterialCount": 1
+      "requiredMaterials": [
+        {
+          "item": "minecraft:potato",
+          "count": 1
+        }
+      ]
     }
   ],
   "buyTrades": [],

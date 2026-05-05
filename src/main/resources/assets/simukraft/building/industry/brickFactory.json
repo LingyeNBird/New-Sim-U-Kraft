@@ -24,7 +24,7 @@
         {
           "item": "minecraft:brick",
           "baseAmount": 1,
-          "randomRange": 2,
+          "randomRange": 0,
           "probability": 1.0
         }
       ]
@@ -41,7 +41,7 @@
     {
       "item": "minecraft:brick",
       "baseAmount": 1,
-      "randomRange": 2,
+      "randomRange": 0,
       "probability": 1.0
     }
   ],

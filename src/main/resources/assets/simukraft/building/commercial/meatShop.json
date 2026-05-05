@@ -39,7 +39,7 @@
       "maxStock": 64,
       "restockAmount": 16,
       "retail": true,
-      "requiredMaterial": "minecraft:beef",
+      "requiredMaterial": "minecraft:porkchop",
       "requiredMaterialCount": 1
     }
   ],

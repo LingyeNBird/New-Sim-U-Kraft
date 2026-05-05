@@ -11,7 +11,7 @@
   "recipes": [
     {
       "recipeId": "sugarcane2suger",
-      "recipeName": "默认配方",
+      "recipeName": "甘蔗制糖",
       "heldItem": "minecraft:sugar_cane",
       "materials": [
         {
@@ -24,20 +24,20 @@
         {
           "item": "minecraft:sugar",
           "baseAmount": 1,
-          "randomRange": 1,
+          "randomRange": 0,
           "probability": 1.0
         },
         {
           "item": "minecraft:sugar",
           "baseAmount": 1,
-          "randomRange": 1,
+          "randomRange": 0,
           "probability": 0.1
         }
       ]
     },
     {
       "recipeId": "beet2suger",
-      "recipeName": "配方2",
+      "recipeName": "甜菜制糖",
       "heldItem": "minecraft:beetroot",
       "materials": [
         {
@@ -50,13 +50,13 @@
         {
           "item": "minecraft:sugar",
           "baseAmount": 1,
-          "randomRange": 1,
+          "randomRange": 0,
           "probability": 1.0
         },
         {
           "item": "minecraft:sugar",
           "baseAmount": 1,
-          "randomRange": 1,
+          "randomRange": 0,
           "probability": 0.1
         }
       ]
@@ -73,13 +73,13 @@
     {
       "item": "minecraft:sugar",
       "baseAmount": 1,
-      "randomRange": 1,
+      "randomRange": 0,
       "probability": 1.0
     },
     {
       "item": "minecraft:sugar",
       "baseAmount": 1,
-      "randomRange": 1,
+      "randomRange": 0,
       "probability": 0.1
     }
   ],

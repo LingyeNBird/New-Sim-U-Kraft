@@ -1,6 +1,6 @@
 {
   "buildingId": "bar",
-  "buildingName": "酒馆",
+  "buildingName": "酒馆（开发中，无功能）",
   "jobType": "beerMaker",
   "jobName": "调酒师",
   "shopMode": "PLAYER_SELL",
@@ -9,7 +9,7 @@
     "start": 100,
     "end": 12000
   },
-  "restockInterval": 101,
+  "restockTime": 101,
   "requireMaterialsForSale": false,
   "trades": [],
   "buyTrades": [],

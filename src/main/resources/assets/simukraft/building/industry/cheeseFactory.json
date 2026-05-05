@@ -1,33 +1,34 @@
 {
-  "buildingId": "mill",
-  "buildingName": "磨坊",
-  "jobType": "miller",
-  "jobName": "磨坊工人",
-  "heldItem": "minecraft:wheat",
+  "buildingId": "cheeseFactory",
+  "buildingName": "奶酪工厂",
+  "jobType": "cheeseMaker",
+  "jobName": "奶酪厂工人",
+  "heldItem": "simukraft:cheese_chunk",
   "workTime": {
     "start": 100,
     "end": 12000
   },
   "recipes": [
     {
-      "recipeId": "wheat2cookie",
-      "recipeName": "曲奇生产",
-      "heldItem": "minecraft:wheat",
+      "recipeId": "cheeseFactory_default",
+      "recipeName": "奶酪生产",
+      "heldItem": "minecraft:milk_bucket",
       "materials": [
         {
-          "item": "minecraft:wheat",
-          "count": 3,
-          "consume": true
-        },
-        {
-          "item": "minecraft:sugar",
+          "item": "minecraft:milk_bucket",
           "count": 1,
           "consume": true
         }
       ],
       "products": [
         {
-          "item": "minecraft:cookie",
+          "item": "simukraft:cheese_chunk",
+          "baseAmount": 1,
+          "randomRange": 0,
+          "probability": 1.0
+        },
+        {
+          "item": "minecraft:bucket",
           "baseAmount": 1,
           "randomRange": 0,
           "probability": 1.0
@@ -37,19 +38,20 @@
   ],
   "materials": [
     {
-      "item": "minecraft:wheat",
-      "consume": true,
-      "amount": 3
-    },
-    {
-      "item": "minecraft:sugar",
+      "item": "minecraft:milk_bucket",
       "consume": true,
       "amount": 1
     }
   ],
   "products": [
     {
-      "item": "minecraft:cookie",
+      "item": "simukraft:cheese_chunk",
+      "baseAmount": 1,
+      "randomRange": 0,
+      "probability": 1.0
+    },
+    {
+      "item": "minecraft:bucket",
       "baseAmount": 1,
       "randomRange": 0,
       "probability": 1.0

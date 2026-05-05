@@ -225,7 +225,7 @@ public class NPCMoveController {
         boolean reachedTraversalHeight = npc.getY() >= targetHeight - 0.15D;
         double horizontalDistanceToTarget = horizontalDistance(npc.position(), targetPos);
         boolean traverseNode = targetNode.action == NPCPathNode.MovementAction.TRAVERSE;
-        boolean stairOrSlabTraversal = isStairOrSlabTraversal(targetNode);
+        boolean stairOrSlabTraversal = shouldUseAutoStepTraversal(targetNode, targetPos);
         if (stairOrSlabTraversal) {
             requiresVerticalTraversal = false;
             resetStepUpState();
@@ -408,7 +408,13 @@ public class NPCMoveController {
     }
     
     private boolean tryAscendTowardNode(NPCPathNode targetNode, Vec3 targetPos) {
-        if (targetNode == null || targetNode.action != NPCPathNode.MovementAction.ASCEND || isVanillaAutoStepNear(targetNode.pos) || isOnVanillaAutoStepBlock()) {
+        if (targetNode == null || targetNode.action != NPCPathNode.MovementAction.ASCEND) {
+            return false;
+        }
+        boolean autoStepNearby = isVanillaAutoStepNear(targetNode.pos);
+        boolean onAutoStep = isOnVanillaAutoStepBlock();
+        boolean allowAscendOnAutoStep = autoStepNearby && shouldAscendOnAutoStep(targetNode, targetPos);
+        if ((autoStepNearby || onAutoStep) && !allowAscendOnAutoStep) {
             return false;
         }
         if (!npc.onGround()) {
@@ -451,6 +457,41 @@ public class NPCMoveController {
         return true;
     }
 
+    private boolean shouldAscendOnAutoStep(NPCPathNode targetNode, Vec3 targetPos) {
+        if (targetNode == null || targetPos == null) {
+            return false;
+        }
+        BlockPos supportPos = BlockPos.containing(targetPos.x, targetNode.standY - 1.0E-5D, targetPos.z);
+        BlockState supportState = level.getBlockState(supportPos);
+        if (!(supportState.getBlock() instanceof StairBlock) && !(supportState.getBlock() instanceof SlabBlock)) {
+            return false;
+        }
+
+        Vec3 currentPos = npc.position();
+        Vec3 supportCenter = Vec3.atCenterOf(supportPos);
+        Vec3 approach = supportCenter.subtract(currentPos);
+        double horizontalDist = Math.sqrt(approach.x * approach.x + approach.z * approach.z);
+        if (horizontalDist <= 1.0E-5D) {
+            return false;
+        }
+
+        double dirX = approach.x / horizontalDist;
+        double dirZ = approach.z / horizontalDist;
+        double enterSampleX = supportPos.getX() + 0.5D - dirX * 0.31D;
+        double enterSampleZ = supportPos.getZ() + 0.5D - dirZ * 0.31D;
+        double innerSampleX = supportPos.getX() + 0.5D + dirX * 0.31D;
+        double innerSampleZ = supportPos.getZ() + 0.5D + dirZ * 0.31D;
+
+        double enterTop = getHighestCollisionTopAt(supportPos, enterSampleX, enterSampleZ);
+        double innerTop = getHighestCollisionTopAt(supportPos, innerSampleX, innerSampleZ);
+        if (enterTop == Double.NEGATIVE_INFINITY || innerTop == Double.NEGATIVE_INFINITY) {
+            return false;
+        }
+
+        double rise = innerTop - enterTop;
+        return Math.abs(rise) <= 0.12D;
+    }
+
     private boolean continueStepUpPhase(NPCPathNode targetNode, Vec3 targetPos) {
         if (targetNode == null || targetNode.action != NPCPathNode.MovementAction.ASCEND) {
             return false;
@@ -488,6 +529,59 @@ public class NPCMoveController {
             default:
                 return false;
         }
+    }
+
+    private double getHighestCollisionTopAt(BlockPos blockPos, double worldX, double worldZ) {
+        BlockState state = level.getBlockState(blockPos);
+        VoxelShape shape = state.getCollisionShape(level, blockPos);
+        if (shape.isEmpty()) {
+            return Double.NEGATIVE_INFINITY;
+        }
+        double localX = worldX - blockPos.getX();
+        double localZ = worldZ - blockPos.getZ();
+        double top = getTopFromSurfaceRegion(shape.toAabbs(), localX, localZ);
+        return top == Double.NEGATIVE_INFINITY ? top : blockPos.getY() + top;
+    }
+
+    private double getTopFromSurfaceRegion(java.util.List<AABB> boxes, double localX, double localZ) {
+        AABB selectedRegion = null;
+        double selectedArea = Double.MAX_VALUE;
+        double selectedTop = Double.NEGATIVE_INFINITY;
+        for (AABB box : boxes) {
+            if (!containsHorizontal(box, localX, localZ)) {
+                continue;
+            }
+            double area = Math.max(0.0D, box.maxX - box.minX) * Math.max(0.0D, box.maxZ - box.minZ);
+            if (selectedRegion == null || area < selectedArea || (Math.abs(area - selectedArea) <= 1.0E-5D && box.maxY < selectedTop)) {
+                selectedRegion = box;
+                selectedArea = area;
+                selectedTop = box.maxY;
+            }
+        }
+        if (selectedRegion == null) {
+            return Double.NEGATIVE_INFINITY;
+        }
+        for (AABB box : boxes) {
+            if (box.maxY <= selectedTop + 1.0E-5D) {
+                continue;
+            }
+            if (sameHorizontalRegion(selectedRegion, box)) {
+                selectedTop = box.maxY;
+            }
+        }
+        return selectedTop;
+    }
+
+    private boolean containsHorizontal(AABB box, double localX, double localZ) {
+        return localX >= box.minX - 1.0E-5D && localX <= box.maxX + 1.0E-5D
+                && localZ >= box.minZ - 1.0E-5D && localZ <= box.maxZ + 1.0E-5D;
+    }
+
+    private boolean sameHorizontalRegion(AABB a, AABB b) {
+        return Math.abs(a.minX - b.minX) <= 1.0E-5D
+                && Math.abs(a.maxX - b.maxX) <= 1.0E-5D
+                && Math.abs(a.minZ - b.minZ) <= 1.0E-5D
+                && Math.abs(a.maxZ - b.maxZ) <= 1.0E-5D;
     }
 
     private void resetStepUpState() {
@@ -1039,6 +1133,19 @@ public class NPCMoveController {
             return false;
         }
         return isVanillaAutoStepNear(node.pos) || isOnVanillaAutoStepBlock();
+    }
+
+    private boolean shouldUseAutoStepTraversal(NPCPathNode node, Vec3 targetPos) {
+        if (!isStairOrSlabTraversal(node)) {
+            return false;
+        }
+        if (node == null) {
+            return false;
+        }
+        if (node.action == NPCPathNode.MovementAction.TRAVERSE) {
+            return true;
+        }
+        return !shouldAscendOnAutoStep(node, targetPos);
     }
 
     private void moveHorizontallyWithoutJump(Vec3 target, NPCPathNode targetNode) {

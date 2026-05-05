@@ -20,6 +20,7 @@ import net.minecraft.world.item.ItemStack;
 import javax.annotation.Nullable;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -187,11 +188,15 @@ public final class NPCFoodMarket {
 
             // 扣除库存（需要原料的商品从箱子扣除，不需要的从库存扣除）
             if (trade != null && trade.requiresMaterial()) {
-                // 从箱子扣除原料
-                ItemStack materialTemplate = parseItemStack(trade.getRequiredMaterial());
-                if (!materialTemplate.isEmpty()) {
-                    int consumed = consumeMaterialsFromNearbyContainers(level, plan.shopPos(), materialTemplate, trade.getRequiredMaterialCount());
-                    if (consumed < trade.getRequiredMaterialCount()) return false;
+                for (CommercialBuildingConfig.MaterialRequirement requirement : trade.getRequiredMaterials()) {
+                    ItemStack materialTemplate = parseItemStack(requirement.getItemId());
+                    if (materialTemplate.isEmpty()) {
+                        return false;
+                    }
+                    int consumed = consumeMaterialsFromNearbyContainers(level, plan.shopPos(), materialTemplate, requirement.getCount());
+                    if (consumed < requirement.getCount()) {
+                        return false;
+                    }
                 }
             } else {
                 // 从传统库存扣除
@@ -255,19 +260,24 @@ public final class NPCFoodMarket {
             return Integer.MAX_VALUE;
         }
 
-        String requiredMaterial = trade.getRequiredMaterial();
-        int requiredCount = trade.getRequiredMaterialCount();
-
-        ItemStack materialTemplate = parseItemStack(requiredMaterial);
-        if (materialTemplate.isEmpty()) {
-            return 0;
+        List<CommercialBuildingConfig.MaterialRequirement> requiredMaterials = trade.getRequiredMaterials();
+        if (requiredMaterials.isEmpty()) {
+            return Integer.MAX_VALUE;
         }
 
-        // 计算箱子中的原料总数
-        int totalMaterials = countMaterialsInNearbyContainers(level, buildingPos, materialTemplate);
-
-        // 计算可以生产多少商品
-        return totalMaterials / requiredCount;
+        int maxProducible = Integer.MAX_VALUE;
+        for (CommercialBuildingConfig.MaterialRequirement requirement : requiredMaterials) {
+            if (requirement.getCount() <= 0) {
+                continue;
+            }
+            ItemStack materialTemplate = parseItemStack(requirement.getItemId());
+            if (materialTemplate.isEmpty()) {
+                return 0;
+            }
+            int totalMaterials = countMaterialsInNearbyContainers(level, buildingPos, materialTemplate);
+            maxProducible = Math.min(maxProducible, totalMaterials / requirement.getCount());
+        }
+        return maxProducible == Integer.MAX_VALUE ? 0 : maxProducible;
     }
 
     /**

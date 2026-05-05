@@ -273,19 +273,24 @@ public class CommercialBuyPacket {
             return Integer.MAX_VALUE;
         }
 
-        String requiredMaterial = trade.getRequiredMaterial();
-        int requiredCount = trade.getRequiredMaterialCount();
-        
-        ItemStack materialTemplate = parseItemStack(requiredMaterial);
-        if (materialTemplate.isEmpty()) {
-            return 0;
+        List<CommercialBuildingConfig.MaterialRequirement> requiredMaterials = trade.getRequiredMaterials();
+        if (requiredMaterials.isEmpty()) {
+            return Integer.MAX_VALUE;
         }
 
-        // 计算箱子中的原料总数
-        int totalMaterials = countMaterialsInNearbyContainers(level, buildingPos, materialTemplate);
-        
-        // 计算可以生产多少商品
-        return totalMaterials / requiredCount;
+        int maxProducible = Integer.MAX_VALUE;
+        for (CommercialBuildingConfig.MaterialRequirement requirement : requiredMaterials) {
+            if (requirement.getCount() <= 0) {
+                continue;
+            }
+            ItemStack materialTemplate = parseItemStack(requirement.getItemId());
+            if (materialTemplate.isEmpty()) {
+                return 0;
+            }
+            int totalMaterials = countMaterialsInNearbyContainers(level, buildingPos, materialTemplate);
+            maxProducible = Math.min(maxProducible, totalMaterials / requirement.getCount());
+        }
+        return maxProducible == Integer.MAX_VALUE ? 0 : maxProducible;
     }
 
     /**
@@ -304,13 +309,9 @@ public class CommercialBuyPacket {
             return true;
         }
 
-        String requiredMaterial = trade.getRequiredMaterial();
-        int requiredCount = trade.getRequiredMaterialCount();
-        int totalMaterialsNeeded = amount * requiredCount;
-
-        ItemStack materialTemplate = parseItemStack(requiredMaterial);
-        if (materialTemplate.isEmpty()) {
-            return false;
+        List<CommercialBuildingConfig.MaterialRequirement> requiredMaterials = trade.getRequiredMaterials();
+        if (requiredMaterials.isEmpty()) {
+            return true;
         }
 
         // 检查并更新每日销售记录
@@ -321,12 +322,30 @@ public class CommercialBuyPacket {
         }
 
         if (!stockInfo.checkAndUpdateDailySale(currentDay, amount, trade.getMaxStock())) {
-            return false; // 超过每日销售限制
+            return false;
         }
 
-        // 扣除原料
-        int consumed = consumeMaterialsFromNearbyContainers(level, buildingPos, materialTemplate, totalMaterialsNeeded);
-        return consumed >= totalMaterialsNeeded;
+        for (CommercialBuildingConfig.MaterialRequirement requirement : requiredMaterials) {
+            ItemStack materialTemplate = parseItemStack(requirement.getItemId());
+            if (materialTemplate.isEmpty()) {
+                return false;
+            }
+            int totalMaterialsNeeded = amount * requirement.getCount();
+            int available = countMaterialsInNearbyContainers(level, buildingPos, materialTemplate);
+            if (available < totalMaterialsNeeded) {
+                return false;
+            }
+        }
+
+        for (CommercialBuildingConfig.MaterialRequirement requirement : requiredMaterials) {
+            ItemStack materialTemplate = parseItemStack(requirement.getItemId());
+            int totalMaterialsNeeded = amount * requirement.getCount();
+            int consumed = consumeMaterialsFromNearbyContainers(level, buildingPos, materialTemplate, totalMaterialsNeeded);
+            if (consumed < totalMaterialsNeeded) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

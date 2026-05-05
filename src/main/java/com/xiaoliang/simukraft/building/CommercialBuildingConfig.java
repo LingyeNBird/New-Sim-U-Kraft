@@ -344,6 +344,7 @@ public class CommercialBuildingConfig {
         private int restockAmount;
         private String requiredMaterial;
         private int requiredMaterialCount = 1;
+        private List<MaterialRequirement> requiredMaterials = new ArrayList<>();
         private boolean retail = false; // 零售模式：开启后可以一个一个卖
 
         public TradeItem(String itemId, double buyPrice, double sellPrice, int maxStock, int restockAmount) {
@@ -395,19 +396,65 @@ public class CommercialBuildingConfig {
         }
 
         public String getRequiredMaterial() {
+            if (!requiredMaterials.isEmpty()) {
+                return requiredMaterials.get(0).getItemId();
+            }
             return requiredMaterial;
         }
 
         public void setRequiredMaterial(String requiredMaterial) {
             this.requiredMaterial = requiredMaterial;
+            if (requiredMaterial != null && !requiredMaterial.isEmpty()) {
+                if (requiredMaterials.isEmpty()) {
+                    requiredMaterials.add(new MaterialRequirement(requiredMaterial, requiredMaterialCount));
+                } else {
+                    requiredMaterials.get(0).setItemId(requiredMaterial);
+                }
+            }
         }
 
         public int getRequiredMaterialCount() {
+            if (!requiredMaterials.isEmpty()) {
+                return requiredMaterials.get(0).getCount();
+            }
             return requiredMaterialCount;
         }
 
         public void setRequiredMaterialCount(int requiredMaterialCount) {
             this.requiredMaterialCount = requiredMaterialCount;
+            if (!requiredMaterials.isEmpty()) {
+                requiredMaterials.get(0).setCount(requiredMaterialCount);
+            }
+        }
+
+        public List<MaterialRequirement> getRequiredMaterials() {
+            if (!requiredMaterials.isEmpty()) {
+                return requiredMaterials;
+            }
+            List<MaterialRequirement> legacyMaterials = new ArrayList<>();
+            if (requiredMaterial != null && !requiredMaterial.isEmpty()) {
+                legacyMaterials.add(new MaterialRequirement(requiredMaterial, requiredMaterialCount));
+            }
+            return legacyMaterials;
+        }
+
+        public void setRequiredMaterials(List<MaterialRequirement> requiredMaterials) {
+            this.requiredMaterials = requiredMaterials != null ? new ArrayList<>(requiredMaterials) : new ArrayList<>();
+            if (!this.requiredMaterials.isEmpty()) {
+                this.requiredMaterial = this.requiredMaterials.get(0).getItemId();
+                this.requiredMaterialCount = this.requiredMaterials.get(0).getCount();
+            }
+        }
+
+        public void addRequiredMaterial(MaterialRequirement material) {
+            if (material == null || material.getItemId() == null || material.getItemId().isEmpty()) {
+                return;
+            }
+            this.requiredMaterials.add(material);
+            if (this.requiredMaterial == null || this.requiredMaterial.isEmpty()) {
+                this.requiredMaterial = material.getItemId();
+                this.requiredMaterialCount = material.getCount();
+            }
         }
 
         public boolean isRetail() {
@@ -422,7 +469,7 @@ public class CommercialBuildingConfig {
          * 检查是否需要原料来生产此物品
          */
         public boolean requiresMaterial() {
-            return requiredMaterial != null && !requiredMaterial.isEmpty();
+            return !getRequiredMaterials().isEmpty();
         }
 
         /**

@@ -445,26 +445,38 @@ public class CommercialWorkHandler {
     private static int restockMaterialBackedTrade(BlockPos pos, ServerLevel level,
                                                   CommercialBuildingConfig.TradeItem trade,
                                                   int requestedAmount) {
-        String requiredMaterial = trade.getRequiredMaterial();
-        int requiredCount = trade.getRequiredMaterialCount();
-        if (requiredMaterial == null || requiredMaterial.isEmpty() || requiredCount <= 0) {
+        List<CommercialBuildingConfig.MaterialRequirement> requiredMaterials = trade.getRequiredMaterials();
+        if (requiredMaterials.isEmpty()) {
             return 0;
         }
 
-        ItemStack materialTemplate = parseItemStack(requiredMaterial);
-        if (materialTemplate.isEmpty()) {
-            return 0;
+        int producible = requestedAmount;
+        for (CommercialBuildingConfig.MaterialRequirement requirement : requiredMaterials) {
+            if (requirement.getCount() <= 0) {
+                continue;
+            }
+            ItemStack materialTemplate = parseItemStack(requirement.getItemId());
+            if (materialTemplate.isEmpty()) {
+                return 0;
+            }
+            int availableMaterials = countMaterialsInNearbyContainers(level, pos, materialTemplate);
+            producible = Math.min(producible, availableMaterials / requirement.getCount());
         }
 
-        int availableMaterials = countMaterialsInNearbyContainers(level, pos, materialTemplate);
-        int producible = Math.min(requestedAmount, availableMaterials / requiredCount);
         if (producible <= 0) {
             return 0;
         }
 
-        int materialsToConsume = producible * requiredCount;
-        int actuallyConsumed = consumeMaterialsForRestock(level, pos, materialTemplate, materialsToConsume);
-        return actuallyConsumed / requiredCount;
+        for (CommercialBuildingConfig.MaterialRequirement requirement : requiredMaterials) {
+            ItemStack materialTemplate = parseItemStack(requirement.getItemId());
+            int materialsToConsume = producible * requirement.getCount();
+            int actuallyConsumed = consumeMaterialsForRestock(level, pos, materialTemplate, materialsToConsume);
+            if (actuallyConsumed < materialsToConsume) {
+                return 0;
+            }
+        }
+
+        return producible;
     }
 
     /**
@@ -660,19 +672,24 @@ public class CommercialWorkHandler {
                                                           CommercialBuildingConfig config) {
         for (CommercialBuildingConfig.TradeItem trade : config.getTrades()) {
             if (!trade.requiresMaterial()) {
-                continue; // 不需要原料的交易跳过
-            }
-
-            String requiredMaterial = trade.getRequiredMaterial();
-            ItemStack template = parseItemStack(requiredMaterial);
-            if (template.isEmpty()) {
                 continue;
             }
 
-            // 检查附近箱子中是否有该原料
-            int count = countMaterialsInNearbyContainers(level, targetPos, template);
-            if (count > 0) {
-                return true; // 只要有一种原料就返回true
+            boolean allPresent = true;
+            for (CommercialBuildingConfig.MaterialRequirement requirement : trade.getRequiredMaterials()) {
+                ItemStack template = parseItemStack(requirement.getItemId());
+                if (template.isEmpty()) {
+                    allPresent = false;
+                    break;
+                }
+                int count = countMaterialsInNearbyContainers(level, targetPos, template);
+                if (count < Math.max(1, requirement.getCount())) {
+                    allPresent = false;
+                    break;
+                }
+            }
+            if (allPresent) {
+                return true;
             }
         }
         return false;

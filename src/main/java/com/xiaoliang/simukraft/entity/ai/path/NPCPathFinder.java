@@ -92,7 +92,7 @@ public class NPCPathFinder {
             }
             if (isAtTarget(current, targetNode)) {
                 NPCPath path = reconstructPath(current, normalizedStart, normalizedEnd);
-                logPathComposition(normalizedStart, normalizedEnd, path);
+                //logPathComposition(normalizedStart, normalizedEnd, path);
                 return path;
             }
 
@@ -192,7 +192,8 @@ public class NPCPathFinder {
                 }
                 StandResult result = evaluateStandPosition(candidateNode.pos);
                 NPCPathNode.NodeType nodeType = result.walkable ? result.nodeType : NPCPathNode.NodeType.WALKABLE;
-                NPCPathNode node = createNeighbor(from, candidateNode, nodeType);
+                NPCPathNode adjustedCandidate = adjustStairCandidateForApproach(from, candidateNode);
+                NPCPathNode node = createNeighbor(from, adjustedCandidate, nodeType);
                 if (node == null || !isReachableAdjacentHeight(from, node) || (!allowFall && node.action == NPCPathNode.MovementAction.FALL)) {
                     continue;
                 }
@@ -204,6 +205,42 @@ public class NPCPathFinder {
             }
         }
         return bestNode;
+    }
+
+    private NPCPathNode adjustStairCandidateForApproach(NPCPathNode from, NPCPathNode candidate) {
+        BlockPos supportPos = getSupportBlockPos(candidate);
+        BlockState supportState = level.getBlockState(supportPos);
+        if (!isVanillaAutoStepBlock(supportState)) {
+            return candidate;
+        }
+
+        StairTransitionType transitionType = classifyStairTransition(from, candidate);
+        if (transitionType != StairTransitionType.ENTER_ASCEND && transitionType != StairTransitionType.SAME_BLOCK_ASCEND) {
+            return candidate;
+        }
+
+        double dx = supportPos.getX() + 0.5D - from.standX;
+        double dz = supportPos.getZ() + 0.5D - from.standZ;
+        double length = Math.sqrt(dx * dx + dz * dz);
+        if (length <= COLLISION_EPSILON) {
+            return candidate;
+        }
+
+        double dirX = dx / length;
+        double dirZ = dz / length;
+        double standX = supportPos.getX() + 0.5D + dirX * 0.18D;
+        double standZ = supportPos.getZ() + 0.5D + dirZ * 0.18D;
+        double standY = getHighestCollisionTopAt(supportPos, standX, standZ);
+        if (standY == Double.NEGATIVE_INFINITY) {
+            return candidate;
+        }
+
+        BlockPos footNodePos = BlockPos.containing(standX, standY, standZ);
+        NPCPathNode adjusted = createSurfaceNode(footNodePos, standX, standY, standZ, candidate.type, candidate.action);
+        if (!isSurfaceNodeStandable(adjusted)) {
+            return candidate;
+        }
+        return adjusted;
     }
 
     private boolean isReachableAdjacentHeight(NPCPathNode from, NPCPathNode to) {
@@ -245,13 +282,23 @@ public class NPCPathFinder {
             return copyNode(target, NPCPathNode.NodeType.DOOR, NPCPathNode.MovementAction.DOOR);
         }
 
-        if (isSameVanillaAutoStepBlock(from, target) && heightDelta <= WALK_STEP_HEIGHT + COLLISION_EPSILON && heightDelta >= -WALK_STEP_HEIGHT - COLLISION_EPSILON) {
+        StairTransitionType stairTransitionType = classifyStairTransition(from, target);
+        if (stairTransitionType == StairTransitionType.SAME_BLOCK_TRAVERSE
+                && heightDelta <= WALK_STEP_HEIGHT + COLLISION_EPSILON
+                && heightDelta >= -WALK_STEP_HEIGHT - COLLISION_EPSILON) {
             logStepDecision("SAME_AUTO_STEP_TRAVERSE", from, target, heightDelta, preferredType);
             return copyNode(target, NPCPathNode.NodeType.WALKABLE, NPCPathNode.MovementAction.TRAVERSE);
         }
-        if (isVanillaAutoStepTransition(from.pos, target.pos) && heightDelta <= WALK_STEP_HEIGHT + COLLISION_EPSILON && heightDelta >= -WALK_STEP_HEIGHT - COLLISION_EPSILON) {
+        if (stairTransitionType == StairTransitionType.ENTER_RAMP_TRAVERSE
+                && heightDelta <= WALK_STEP_HEIGHT + COLLISION_EPSILON
+                && heightDelta >= -WALK_STEP_HEIGHT - COLLISION_EPSILON) {
             logStepDecision("AUTO_STEP_TRANSITION_TRAVERSE", from, target, heightDelta, preferredType);
             return copyNode(target, NPCPathNode.NodeType.WALKABLE, NPCPathNode.MovementAction.TRAVERSE);
+        }
+        if ((stairTransitionType == StairTransitionType.ENTER_ASCEND || stairTransitionType == StairTransitionType.SAME_BLOCK_ASCEND)
+                && heightDelta < MAX_ASCEND_HEIGHT) {
+            logStepDecision("AUTO_STEP_TRANSITION_ASCEND", from, target, heightDelta, preferredType);
+            return copyNode(target, NPCPathNode.NodeType.JUMP, NPCPathNode.MovementAction.ASCEND);
         }
         if (heightDelta > WALK_STEP_HEIGHT && heightDelta < MAX_ASCEND_HEIGHT) {
             logStepDecision("ASCEND_CLASSIFIED", from, target, heightDelta, preferredType);
@@ -282,6 +329,59 @@ public class NPCPathFinder {
         double verticalSquared = Math.max(0.0D, hypotenuse * hypotenuse - horizontalSquared);
         double verticalDistance = Math.sqrt(verticalSquared);
         return to.standY >= from.standY ? verticalDistance : -verticalDistance;
+    }
+
+    private StairTransitionType classifyStairTransition(NPCPathNode from, NPCPathNode target) {
+        BlockPos targetSupport = getSupportBlockPos(target);
+        BlockState targetSupportState = level.getBlockState(targetSupport);
+        if (!isVanillaAutoStepBlock(targetSupportState)) {
+            if (isSameVanillaAutoStepBlock(from, target)) {
+                return StairTransitionType.SAME_BLOCK_TRAVERSE;
+            }
+            return StairTransitionType.NONE;
+        }
+
+        if (isSameVanillaAutoStepBlock(from, target)) {
+            return analyzeStairTransition(from, targetSupport, true);
+        }
+        if (isVanillaAutoStepTransition(from.pos, target.pos)) {
+            return analyzeStairTransition(from, targetSupport, false);
+        }
+        return StairTransitionType.NONE;
+    }
+
+    private StairTransitionType analyzeStairTransition(NPCPathNode from, BlockPos targetSupport, boolean sameSupportBlock) {
+        double dx = targetSupport.getX() + 0.5D - from.standX;
+        double dz = targetSupport.getZ() + 0.5D - from.standZ;
+        if (Math.abs(dx) <= COLLISION_EPSILON && Math.abs(dz) <= COLLISION_EPSILON) {
+            return sameSupportBlock ? StairTransitionType.SAME_BLOCK_TRAVERSE : StairTransitionType.NONE;
+        }
+
+        double length = Math.sqrt(dx * dx + dz * dz);
+        double dirX = dx / length;
+        double dirZ = dz / length;
+        double enterSampleX = targetSupport.getX() + 0.5D - dirX * 0.31D;
+        double enterSampleZ = targetSupport.getZ() + 0.5D - dirZ * 0.31D;
+        double innerSampleX = targetSupport.getX() + 0.5D + dirX * 0.31D;
+        double innerSampleZ = targetSupport.getZ() + 0.5D + dirZ * 0.31D;
+
+        double enterTop = getHighestCollisionTopAt(targetSupport, enterSampleX, enterSampleZ);
+        double innerTop = getHighestCollisionTopAt(targetSupport, innerSampleX, innerSampleZ);
+        if (enterTop == Double.NEGATIVE_INFINITY || innerTop == Double.NEGATIVE_INFINITY) {
+            return StairTransitionType.NONE;
+        }
+
+        double rise = innerTop - enterTop;
+        if (rise > 0.12D) {
+            return StairTransitionType.ENTER_RAMP_TRAVERSE;
+        }
+        if (sameSupportBlock && Math.abs(rise) <= 0.12D) {
+            return StairTransitionType.SAME_BLOCK_ASCEND;
+        }
+        if (!sameSupportBlock && Math.abs(rise) <= 0.12D) {
+            return StairTransitionType.ENTER_ASCEND;
+        }
+        return StairTransitionType.NONE;
     }
 
     private void logStepDecision(String reason, NPCPathNode from, NPCPathNode target, double heightDelta, NPCPathNode.NodeType preferredType) {
@@ -358,11 +458,77 @@ public class NPCPathFinder {
         }
         Set<String> added = new HashSet<>();
         List<AABB> boxes = shape.toAabbs();
+
+        // menglannnn: 对于楼梯/台阶，基于碰撞箱生成所有可能的站立点，不依赖朝向
+        if (isVanillaAutoStepBlock(state)) {
+            addStairSurfaceNodes(nodes, added, boxes, blockPos, nodePos, type, action);
+        } else {
+            for (AABB box : boxes) {
+                if (box.maxY <= 0.0D) {
+                    continue;
+                }
+                addExposedTopSurfaceNodes(nodes, added, boxes, box, blockPos, nodePos, type, action);
+            }
+        }
+    }
+
+    /**
+     * menglannnn: 为楼梯/台阶生成表面节点 - 基于碰撞箱，兼容任意朝向
+     * 遍历所有碰撞box，为每个顶部表面生成可站立节点
+     */
+    private void addStairSurfaceNodes(List<NPCPathNode> nodes, Set<String> added, List<AABB> boxes, BlockPos blockPos, BlockPos nodePos, NPCPathNode.NodeType type, NPCPathNode.MovementAction action) {
+        // 按高度分组，找到所有独特的顶部表面高度
+        Map<Double, List<AABB>> heightGroups = new HashMap<>();
         for (AABB box : boxes) {
             if (box.maxY <= 0.0D) {
                 continue;
             }
-            addExposedTopSurfaceNodes(nodes, added, boxes, box, blockPos, nodePos, type, action);
+            double height = box.maxY;
+            heightGroups.computeIfAbsent(height, k -> new ArrayList<>()).add(box);
+        }
+
+        // 对每个高度层，计算暴露的顶部表面区域
+        for (Map.Entry<Double, List<AABB>> entry : heightGroups.entrySet()) {
+            double height = entry.getKey();
+            List<AABB> layerBoxes = entry.getValue();
+
+            // 合并同一高度的所有box的水平区域
+            List<double[]> regions = new ArrayList<>();
+            for (AABB box : layerBoxes) {
+                regions.add(new double[]{box.minX, box.maxX, box.minZ, box.maxZ});
+            }
+
+            // 减去上方更高层的遮挡区域
+            for (AABB upperBox : boxes) {
+                if (upperBox.maxY <= height + COLLISION_EPSILON) {
+                    continue;
+                }
+                List<double[]> nextRegions = new ArrayList<>();
+                for (double[] region : regions) {
+                    subtractHorizontalRegion(region, upperBox, nextRegions);
+                }
+                regions = nextRegions;
+                if (regions.isEmpty()) {
+                    break;
+                }
+            }
+
+            // 为每个暴露区域生成节点
+            for (double[] region : regions) {
+                double width = region[1] - region[0];
+                double depth = region[3] - region[2];
+                if (width <= COLLISION_EPSILON || depth <= COLLISION_EPSILON) {
+                    continue;
+                }
+                double standX = blockPos.getX() + (region[0] + region[1]) * 0.5D;
+                double standY = blockPos.getY() + height;
+                double standZ = blockPos.getZ() + (region[2] + region[3]) * 0.5D;
+                BlockPos footNodePos = BlockPos.containing(standX, standY, standZ);
+                String key = NPCPathNode.createKey(standX, standY, standZ);
+                if ((nodePos == null || footNodePos.equals(nodePos)) && added.add(key)) {
+                    nodes.add(createSurfaceNode(footNodePos, standX, standY, standZ, type, action));
+                }
+            }
         }
     }
 
@@ -915,7 +1081,7 @@ public class NPCPathFinder {
         return npcPath;
     }
 
-    private void logPathComposition(BlockPos start, BlockPos end, NPCPath path) {
+    /*private void logPathComposition(BlockPos start, BlockPos end, NPCPath path) {
         if (path == null || path.isFailed() || path.isEmpty()) {
             return;
         }
@@ -934,7 +1100,7 @@ public class NPCPathFinder {
             typesBuilder.append(node.type.name()).append("/").append(node.action.name()).append("@").append(node.pos);
         }
         Simukraft.LOGGER.info("[NPCPathFinder] 路径完成 start={} end={} nodes={} jump={} fall={} path={}", start, end, path.getTotalNodes(), jumpCount, fallCount, typesBuilder);
-    }
+    }*/
 
     private NPCPath createFailedPath(BlockPos start, BlockPos end) {
         NPCPath path = new NPCPath(level, start, end);
@@ -958,5 +1124,13 @@ public class NPCPathFinder {
         private static StandResult blocked() {
             return new StandResult(false, NPCPathNode.NodeType.WALKABLE);
         }
+    }
+
+    private enum StairTransitionType {
+        NONE,
+        SAME_BLOCK_TRAVERSE,
+        SAME_BLOCK_ASCEND,
+        ENTER_RAMP_TRAVERSE,
+        ENTER_ASCEND
     }
 }

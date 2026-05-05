@@ -413,11 +413,23 @@ public class CommercialBuildingManager {
                 int restockAmount = trade.has("restockAmount") ? trade.get("restockAmount").getAsInt() : 32;
                 TradeItem tradeItem = new TradeItem(itemId, buyPrice, sellPrice, maxStock, restockAmount);
                 // 解析原料需求字段（可选）
-                if (trade.has("requiredMaterial")) {
+                if (trade.has("requiredMaterials") && trade.get("requiredMaterials").isJsonArray()) {
+                    JsonArray requiredMaterials = trade.getAsJsonArray("requiredMaterials");
+                    for (JsonElement materialElem : requiredMaterials) {
+                        JsonObject materialObject = materialElem.getAsJsonObject();
+                        String materialItemId = materialObject.get("item").getAsString();
+                        int materialCount = materialObject.has("count") ? materialObject.get("count").getAsInt() : 1;
+                        CommercialBuildingConfig.MaterialRequirement requirement = new CommercialBuildingConfig.MaterialRequirement(materialItemId, materialCount);
+                        if (materialObject.has("consume")) {
+                            requirement.setConsume(materialObject.get("consume").getAsBoolean());
+                        }
+                        tradeItem.addRequiredMaterial(requirement);
+                    }
+                } else if (trade.has("requiredMaterial")) {
                     tradeItem.setRequiredMaterial(trade.get("requiredMaterial").getAsString());
-                }
-                if (trade.has("requiredMaterialCount")) {
-                    tradeItem.setRequiredMaterialCount(trade.get("requiredMaterialCount").getAsInt());
+                    if (trade.has("requiredMaterialCount")) {
+                        tradeItem.setRequiredMaterialCount(trade.get("requiredMaterialCount").getAsInt());
+                    }
                 }
                 // 解析零售模式字段（可选）
                 if (trade.has("retail")) {

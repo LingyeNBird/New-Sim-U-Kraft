@@ -206,11 +206,8 @@ public class BuilderWorkService extends AbstractWorkService {
         if (releaseResult.success() && releaseResult.assignment() != null) {
             syncPos = releaseResult.assignment().workplacePos();
             cleanupBuilderLegacyHireData(server, npc.getUUID(), syncPos);
-            server.getPlayerList().getPlayers().forEach(player ->
-                    com.xiaoliang.simukraft.network.NetworkManager.sendToPlayer(
-                            new com.xiaoliang.simukraft.network.EmploymentStateChangedPacket(releaseResult.assignment()),
-                            player
-                    )
+            com.xiaoliang.simukraft.network.EmploymentCommandPacket.applyFireSideEffectsAndBroadcast(
+                    server, releaseResult.assignment(), false
             );
         } else {
             cleanupBuilderLegacyHireData(server, npc.getUUID(), buildBoxPos);

@@ -1,18 +1,13 @@
 package com.xiaoliang.simukraft.block;
 
-import com.xiaoliang.simukraft.entity.WorkStatus;
-import com.xiaoliang.simukraft.network.NetworkManager;
-import com.xiaoliang.simukraft.network.NPCWorkStatusPacket;
 import com.xiaoliang.simukraft.utils.ClientRuntimeBridge;
 import com.xiaoliang.simukraft.world.BaseBuildingHiredData;
 import com.xiaoliang.simukraft.world.LogisticsData;
-import com.xiaoliang.simukraft.world.LogisticsHiredData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
@@ -61,41 +56,23 @@ public class LogisticsServerBlock extends Block {
 
             // 照抄建筑盒模式：当物流服务端被破坏时，自动解雇仓库管理员
             var server = serverLevel.getServer();
-            UUID npcUuid = LogisticsHiredData.getServerBoxHiredNpc(server, pos);
-
-            if (npcUuid != null) {
+            var releaseResult = com.xiaoliang.simukraft.employment.service.EmploymentServices.get(server).onWorkBlockRemoved(
+                    new com.xiaoliang.simukraft.employment.service.EmploymentCommands.WorkBlockRemovedCommand(
+                            serverLevel.dimension().location().toString(), pos
+                    )
+            );
+            if (releaseResult.success() && releaseResult.assignment() != null) {
+                com.xiaoliang.simukraft.network.EmploymentCommandPacket.applyFireSideEffectsAndBroadcast(
+                        server, releaseResult.assignment(), false
+                );
+                UUID npcUuid = releaseResult.assignment().npcUuid();
                 var npc = BaseBuildingHiredData.findNPCByUuid(server, npcUuid);
-                if (npc != null) {
-                    // 重置NPC状态为空闲
-                    npc.setWorkStatus(WorkStatus.IDLE);
-                    npc.setWorking(false);
-                    npc.setJob("unemployed");
-                    npc.resetToIdle();
-                    npc.setItemInHand(InteractionHand.MAIN_HAND, Objects.requireNonNull(ItemStack.EMPTY));
-                    npc.setItemInHand(InteractionHand.OFF_HAND, Objects.requireNonNull(ItemStack.EMPTY));
-                    com.xiaoliang.simukraft.utils.NPCDataManager.saveJobData(npc);
-
-                    // 发送解雇数据包给所有玩家
-                    server.getPlayerList().getPlayers().forEach(player -> {
-                        NetworkManager.sendToPlayer(
-                            new NPCWorkStatusPacket(npc.getUUID(), WorkStatus.IDLE, pos),
-                            player
-                        );
-                    });
-
-                    // 发送聊天提示（通过通知接口，按城市过滤）
-                    String npcName = npc.getFullName();
-                    java.util.UUID cityId = npc.getCityId();
-                    if (cityId != null) {
-                        com.xiaoliang.simukraft.utils.CityMessageUtils.sendToCityGroup(
-                            server, cityId,
-                            net.minecraft.network.chat.Component.translatable("message.logistics.destroyed", npcName)
-                        );
-                    }
+                if (npc != null && npc.getCityId() != null) {
+                    com.xiaoliang.simukraft.utils.CityMessageUtils.sendToCityGroup(
+                            server, npc.getCityId(),
+                            net.minecraft.network.chat.Component.translatable("message.logistics.destroyed", npc.getFullName())
+                    );
                 }
-
-                // 从雇佣记录中移除
-                LogisticsHiredData.removeServerBoxHired(server, pos);
             }
 
             // 移除仓库数据

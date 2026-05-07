@@ -4,9 +4,6 @@ import com.xiaoliang.simukraft.building.ControlBoxDataManager;
 import com.xiaoliang.simukraft.building.ConstructionBoxMapping;
 import com.xiaoliang.simukraft.employment.service.EmploymentCommands;
 import com.xiaoliang.simukraft.employment.service.EmploymentServices;
-import com.xiaoliang.simukraft.entity.WorkStatus;
-import com.xiaoliang.simukraft.network.NPCWorkStatusPacket;
-import com.xiaoliang.simukraft.network.NetworkManager;
 import com.xiaoliang.simukraft.utils.BuildingDataManager;
 import com.xiaoliang.simukraft.utils.ClientRuntimeBridge;
 import com.xiaoliang.simukraft.world.CityData;
@@ -193,7 +190,9 @@ public class CommercialControlBoxBlock extends Block {
                     new EmploymentCommands.WorkBlockRemovedCommand(serverLevel.dimension().location().toString(), pos)
             );
             if (releaseResult.success() && releaseResult.assignment() != null) {
-                NetworkManager.sendToAll(new com.xiaoliang.simukraft.network.EmploymentStateChangedPacket(releaseResult.assignment()), serverLevel);
+                com.xiaoliang.simukraft.network.EmploymentCommandPacket.applyFireSideEffectsAndBroadcast(
+                        server, releaseResult.assignment(), false
+                );
             }
 
             // 从 CommercialHiredData 加载雇佣信息
@@ -206,10 +205,6 @@ public class CommercialControlBoxBlock extends Block {
                 // 查找对应的NPC实体
                 var npc = CommercialHiredData.findNPCByUuid(server, npcUuid);
                 if (npc != null) {
-                    // 重置NPC状态为空闲
-                    npc.setWorkStatus(WorkStatus.IDLE);
-                    npc.resetToIdle();
-
                     // 获取NPC雇佣信息以确定城市
                     UUID npcCityId = null;
                     CityData cityData = CityData.get(serverLevel);
@@ -219,14 +214,6 @@ public class CommercialControlBoxBlock extends Block {
                             break;
                         }
                     }
-
-                    // 发送解雇数据包给所有玩家
-                    server.getPlayerList().getPlayers().forEach(p -> {
-                        NetworkManager.sendToPlayer(
-                            new NPCWorkStatusPacket(npc.getUUID(), WorkStatus.IDLE, pos),
-                            p
-                        );
-                    });
 
                     // 发送聊天提示（通过通知接口，按城市过滤）
                     String npcName = npc.getFullName();

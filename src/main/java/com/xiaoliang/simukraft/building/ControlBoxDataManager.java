@@ -340,7 +340,15 @@ public class ControlBoxDataManager {
      * 写入其他类型控制盒数据
      */
     public static void writeOtherControlBox(MinecraftServer server, BlockPos pos, String buildingName, UUID residentUuid, UUID cityId) {
-        writeControlBox(server, pos, "other_control_box", buildingName, null, OTHER_DIR, residentUuid, cityId);
+        writeOtherControlBox(server, pos, buildingName, null, residentUuid, cityId);
+    }
+
+    /**
+     * 写入其他类型控制盒数据
+     */
+    public static void writeOtherControlBox(MinecraftServer server, BlockPos pos, String buildingName,
+                                            String buildingFileName, UUID residentUuid, UUID cityId) {
+        writeControlBox(server, pos, "other_control_box", buildingName, buildingFileName, OTHER_DIR, residentUuid, cityId);
     }
     
     /**

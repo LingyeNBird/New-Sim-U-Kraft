@@ -7,9 +7,6 @@ import com.xiaoliang.simukraft.entity.WorkSubState;
 import com.xiaoliang.simukraft.farmland.CropDefinition;
 import com.xiaoliang.simukraft.farmland.CropRegistry;
 import com.xiaoliang.simukraft.farmland.FarmlandPlot;
-import com.xiaoliang.simukraft.network.EmploymentStateChangedPacket;
-import com.xiaoliang.simukraft.network.NPCWorkStatusPacket;
-import com.xiaoliang.simukraft.network.NetworkManager;
 import com.xiaoliang.simukraft.notification.MessageCategory;
 import com.xiaoliang.simukraft.world.FarmlandHiredData;
 import net.minecraft.core.BlockPos;
@@ -248,17 +245,14 @@ public final class FarmlandManager {
                 : employmentService.fireByWorkplace(new com.xiaoliang.simukraft.employment.service.EmploymentCommands.FireByWorkplaceCommand(level.dimension().location().toString(), boxPos));
         
         if (releaseResult.success() && releaseResult.assignment() != null) {
-            NetworkManager.sendToAll(new EmploymentStateChangedPacket(releaseResult.assignment()), level);
+            com.xiaoliang.simukraft.network.EmploymentCommandPacket.applyFireSideEffectsAndBroadcast(
+                    server, releaseResult.assignment(), false
+            );
         }
 
         // 3. 重置NPC状态
         if (npc != null) {
             npc.setWorkStatus(WorkStatus.IDLE);
-            npc.resetToIdle();
-            CustomEntity finalNpc = npc;
-            server.getPlayerList().getPlayers().forEach(p -> 
-                NetworkManager.sendToPlayer(new NPCWorkStatusPacket(finalNpc.getUUID(), WorkStatus.IDLE, boxPos), p)
-            );
         }
 
         // 4. 清理持久化数据与运行时计时器

@@ -989,15 +989,7 @@ public class WorldEvents {
 
         if (releaseResult.success() && releaseResult.assignment() != null) {
             var assignment = releaseResult.assignment();
-            UUID npcUuid = assignment.npcUuid();
-
-            // 查找NPC并重置状态
-            var npc = com.xiaoliang.simukraft.world.BaseBuildingHiredData.findNPCByUuid(server, npcUuid);
-            if (npc != null) {
-                npc.setWorkStatus(com.xiaoliang.simukraft.entity.WorkStatus.IDLE);
-                npc.resetToIdle();
-                Simukraft.LOGGER.info("[WorldEvents] 工作方块被摧毁，已解雇NPC: {}, 位置: {}", npc.getFullName(), pos);
-            }
+            com.xiaoliang.simukraft.network.EmploymentCommandPacket.applyFireSideEffectsAndBroadcast(server, assignment, false);
 
             // 根据方块类型清理对应的雇佣数据
             if (state.is(com.xiaoliang.simukraft.init.ModBlocks.INDUSTRIAL_CONTROL_BOX.get())) {
@@ -1014,9 +1006,11 @@ public class WorldEvents {
                 }
             }
 
-            // 发送同步数据包
-            com.xiaoliang.simukraft.network.NetworkManager.sendToAll(
-                new com.xiaoliang.simukraft.network.EmploymentStateChangedPacket(assignment), serverLevel);
+            UUID npcUuid = assignment.npcUuid();
+            var npc = com.xiaoliang.simukraft.world.BaseBuildingHiredData.findNPCByUuid(server, npcUuid);
+            if (npc != null) {
+                Simukraft.LOGGER.info("[WorldEvents] 工作方块被摧毁，已解雇NPC: {}, 位置: {}", npc.getFullName(), pos);
+            }
         }
     }
 

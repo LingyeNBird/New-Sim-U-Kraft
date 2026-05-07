@@ -966,8 +966,13 @@ public class NPCRestHandler {
             return;
         }
         try {
-            com.xiaoliang.simukraft.employment.service.EmploymentServices.get(server)
+            var result = com.xiaoliang.simukraft.employment.service.EmploymentServices.get(server)
                     .fireByNpc(new com.xiaoliang.simukraft.employment.service.EmploymentCommands.FireByNpcCommand(npc.getUUID()));
+            if (result.success() && result.assignment() != null) {
+                com.xiaoliang.simukraft.network.EmploymentCommandPacket.applyFireSideEffectsAndBroadcast(
+                        server, result.assignment(), false
+                );
+            }
         } catch (Exception e) {
             LOGGER.warn("[NPCRestHandler] 清理建筑师 V2 雇佣记录失败 - NPC: {}", npc.getFullName(), e);
         }

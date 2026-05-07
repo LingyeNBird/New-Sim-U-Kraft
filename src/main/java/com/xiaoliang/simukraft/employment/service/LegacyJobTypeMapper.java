@@ -1,5 +1,6 @@
 package com.xiaoliang.simukraft.employment.service;
 
+import com.xiaoliang.simukraft.building.MedicalBuildingManager;
 import com.xiaoliang.simukraft.employment.domain.JobType;
 
 public final class LegacyJobTypeMapper {
@@ -21,6 +22,7 @@ public final class LegacyJobTypeMapper {
             case "builder" -> JobType.BUILDER;
             case "planner" -> JobType.PLANNER;
             case "farmer" -> JobType.FARMER;
+            case "doctor" -> JobType.DOCTOR;
             case "warehouse_manager" -> JobType.WAREHOUSE_MANAGER;
             default -> defaultByWorkBlock(workBlockTypeHint);
         };
@@ -36,6 +38,7 @@ public final class LegacyJobTypeMapper {
             case FARMER -> "farmer";
             case COMMERCIAL_GENERIC -> "shopkeeper";
             case INDUSTRIAL_GENERIC -> "worker";
+            case DOCTOR -> "doctor";
             case WAREHOUSE_MANAGER -> "warehouse_manager";
             default -> "worker";
         };
@@ -58,6 +61,10 @@ public final class LegacyJobTypeMapper {
             // 工业建筑统一返回 INDUSTRIAL_GENERIC
             return JobType.INDUSTRIAL_GENERIC;
         }
+
+        if (MedicalBuildingManager.isMedicalBuilding(legacyJob) || "doctor".equalsIgnoreCase(legacyJob)) {
+            return JobType.DOCTOR;
+        }
         
         return null;
     }
@@ -76,6 +83,9 @@ public final class LegacyJobTypeMapper {
         }
         if ("commercial".equals(workBlockTypeHint)) {
             return JobType.COMMERCIAL_GENERIC;
+        }
+        if ("other".equals(workBlockTypeHint) || "other_control_box".equals(workBlockTypeHint)) {
+            return JobType.DOCTOR;
         }
         if ("logistics".equals(workBlockTypeHint)) {
             return JobType.WAREHOUSE_MANAGER;

@@ -1,35 +1,31 @@
 package com.xiaoliang.simukraft.utils;
 
 import com.xiaoliang.simukraft.building.ControlBoxDataManager;
+import com.xiaoliang.simukraft.building.MedicalBuildingConfig;
+import com.xiaoliang.simukraft.building.MedicalBuildingManager;
 import com.xiaoliang.simukraft.employment.domain.EmploymentAssignment;
 import com.xiaoliang.simukraft.employment.domain.JobType;
 import com.xiaoliang.simukraft.employment.service.EmploymentCommands;
 import com.xiaoliang.simukraft.employment.service.EmploymentServices;
-import com.xiaoliang.simukraft.employment.service.LegacyJobTypeMapper;
 import com.xiaoliang.simukraft.entity.CustomEntity;
 import com.xiaoliang.simukraft.entity.Gender;
 import com.xiaoliang.simukraft.entity.WorkSubState;
 import com.xiaoliang.simukraft.entity.WorkStatus;
 import com.xiaoliang.simukraft.init.ModEntities;
-import com.xiaoliang.simukraft.network.EmploymentStateChangedPacket;
-import com.xiaoliang.simukraft.network.NetworkManager;
-import com.xiaoliang.simukraft.network.SyncBuildBoxHireStatusPacket;
-import com.xiaoliang.simukraft.network.SyncFarmlandDataPacket;
-import com.xiaoliang.simukraft.network.SyncLogisticsHireStatusPacket;
-import com.xiaoliang.simukraft.network.SyncWorkBlockHireStatusPacket;
 import com.xiaoliang.simukraft.world.CityData;
 import com.xiaoliang.simukraft.world.BaseBuildingHiredData;
-import com.xiaoliang.simukraft.world.FarmlandHiredData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BedBlock;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -63,18 +59,23 @@ public final class NPCFamilyManager {
     private static final int AFFECTION_DURATION_TICKS = 600;
     private static final long AFFECTION_NOT_STARTED = -1L;
     private static final long HOSPITAL_CACHE_TTL_TICKS = 1200L;
+    private static final long HOSPITAL_QUEUE_MESSAGE_INTERVAL_TICKS = 200L;
     private static final long LABOR_AFTER_FULL_DAYS = 10L;
     private static final long LABOR_BIRTH_TICKS = 600L;
     private static final double DEBUG_RADIUS = 16.0D;
     private static final double DEBUG_INTIMACY_TRIGGER_RADIUS = 3.0D;
     private static final double INTIMACY_PARTNER_CLOSE_DISTANCE_SQR = 2.25D;
     private static final double INTIMACY_TARGET_REACHED_DISTANCE_SQR = 1.0D;
+    private static final double LABOR_READY_RANGE_SQR = 144.0D;
+    private static final double DOCTOR_READY_DISTANCE_SQR = 6.25D;
     private static final UUID HOSPITAL_CACHE_FALLBACK_KEY = new UUID(0L, 0L);
 
     private static final Map<UUID, IntimacySession> activeSessions = new ConcurrentHashMap<>();
     private static final Set<UUID> pregnancyManagedNpcUuids = ConcurrentHashMap.newKeySet();
     private static final Map<UUID, CachedHospitalTarget> hospitalTargetCache = new ConcurrentHashMap<>();
     private static final Map<UUID, Long> laborStartGameTimes = new ConcurrentHashMap<>();
+    private static final Map<UUID, BlockPos> laborBedAssignments = new ConcurrentHashMap<>();
+    private static final Map<String, Long> hospitalQueueMessageTimes = new ConcurrentHashMap<>();
     private static boolean nightAffectionTriggered = false;
     private static long lastPregnancyDayCheck = Long.MIN_VALUE;
 
@@ -84,7 +85,11 @@ public final class NPCFamilyManager {
     public record FamilyPair(CustomEntity maleNpc, CustomEntity femaleNpc) {
     }
 
-    private record HospitalTarget(ServerLevel level, BlockPos controlBoxPos) {
+    private record HospitalTarget(ServerLevel level,
+                                  BlockPos controlBoxPos,
+                                  @Nullable String buildingName,
+                                  @Nullable String buildingFileName,
+                                  boolean canParturition) {
     }
 
     private record CachedHospitalTarget(@Nullable HospitalTarget target, long cachedAtGameTime) {
@@ -104,6 +109,8 @@ public final class NPCFamilyManager {
         pregnancyManagedNpcUuids.clear();
         hospitalTargetCache.clear();
         laborStartGameTimes.clear();
+        laborBedAssignments.clear();
+        hospitalQueueMessageTimes.clear();
         nightAffectionTriggered = false;
         lastPregnancyDayCheck = Long.MIN_VALUE;
     }
@@ -464,7 +471,7 @@ public final class NPCFamilyManager {
         for (CustomEntity npc : NPCTaskScheduler.getAllNPCs(server)) {
             NPCDataManager.NPCPregnancyData data = NPCDataManager.getNPCPregnancyData(server, npc.getUUID());
             if (data == null) {
-                laborStartGameTimes.remove(npc.getUUID());
+                clearLaborRuntimeState(npc.getUUID());
                 continue;
             }
             if (PREGNANCY_STAGE_LABOR.equalsIgnoreCase(data.stage())) {
@@ -472,7 +479,7 @@ public final class NPCFamilyManager {
                 keepNpcInLabor(server, npc);
                 tickLaborProgress(server, npc);
             } else {
-                laborStartGameTimes.remove(npc.getUUID());
+                clearLaborRuntimeState(npc.getUUID());
                 keepPregnantNpcAtHome(server, npc);
             }
         }
@@ -748,18 +755,26 @@ public final class NPCFamilyManager {
         npc.setTarget(null);
 
         BlockPos bedPos = NPCRestHandler.findFamilyBed(hospital.level(), hospital.controlBoxPos(), npc);
+        bedPos = resolveLaborBed(hospital, npc, bedPos);
         if (bedPos != null) {
-            if (npc.blockPosition().distSqr(bedPos) > 2.25D) {
-                npc.teleportTo(bedPos.getX() + 0.5D, bedPos.getY(), bedPos.getZ() + 0.5D);
+            moveNpcIntoManagedArea(npc, bedPos);
+            if (npc.blockPosition().distSqr(bedPos) > 6.25D) {
+                npc.setNoAi(false);
+                npc.setStatusLabel(STATUS_IN_LABOR);
+                return;
             }
             NPCRestHandler.tryStartSleepingForFamily(npc, bedPos, hospital.level());
-            npc.setNoAi(true);
+            boolean doctorReady = guideDoctorToLaborBed(server, hospital, bedPos);
+            npc.setNoAi(doctorReady && npc.isSleeping());
             npc.setStatusLabel(STATUS_IN_LABOR);
             return;
         }
 
+        laborBedAssignments.remove(npc.getUUID());
+        notifyHospitalQueueIfNeeded(server, npc, hospital);
         BlockPos standPos = findNearbyStandPos(hospital.level(), hospital.controlBoxPos(), Direction.NORTH);
-        teleportNpcToManagedArea(npc, standPos != null ? standPos : hospital.controlBoxPos());
+        moveNpcIntoManagedArea(npc, standPos != null ? standPos : hospital.controlBoxPos());
+        npc.setNoAi(false);
         npc.setStatusLabel(STATUS_IN_LABOR);
     }
 
@@ -787,7 +802,15 @@ public final class NPCFamilyManager {
         if (hospital == null) {
             return true;
         }
-        return level == hospital.level() && npc.blockPosition().distSqr(hospital.controlBoxPos()) <= 144.0D;
+        if (level != hospital.level() || npc.blockPosition().distSqr(hospital.controlBoxPos()) > LABOR_READY_RANGE_SQR) {
+            return false;
+        }
+
+        BlockPos bedPos = resolveLaborBed(hospital, npc, laborBedAssignments.get(npc.getUUID()));
+        if (bedPos == null || !npc.isSleeping()) {
+            return false;
+        }
+        return guideDoctorToLaborBed(server, hospital, bedPos);
     }
 
     private static void completeBirth(MinecraftServer server, CustomEntity motherNpc) {
@@ -822,7 +845,7 @@ public final class NPCFamilyManager {
 
         NPCDataManager.setNPCPregnancyData(server, motherNpc.getUUID(), "none", -1L);
         pregnancyManagedNpcUuids.remove(motherNpc.getUUID());
-        laborStartGameTimes.remove(motherNpc.getUUID());
+        clearLaborRuntimeState(motherNpc.getUUID());
         resetNpcToUnemployed(server, motherNpc.getUUID(), motherNpc);
 
         BlockPos homePos = NPCRestHandler.getFamilyHomePosition(motherNpc, server);
@@ -860,18 +883,6 @@ public final class NPCFamilyManager {
         } else {
             npc.getNavigation().stop();
         }
-    }
-
-    private static void teleportNpcToManagedArea(CustomEntity npc, BlockPos targetPos) {
-        if (npc == null || targetPos == null) {
-            return;
-        }
-        if (npc.blockPosition().distSqr(targetPos) <= 1.0D) {
-            npc.getNavigation().stop();
-            return;
-        }
-        npc.teleportTo(targetPos.getX() + 0.5D, targetPos.getY(), targetPos.getZ() + 0.5D);
-        npc.getNavigation().stop();
     }
 
     private static void ensureHospitalAreaLoaded(ServerLevel level, BlockPos anchorPos) {
@@ -913,7 +924,7 @@ public final class NPCFamilyManager {
 
         for (UUID targetUuid : targets) {
             pregnancyManagedNpcUuids.remove(targetUuid);
-            laborStartGameTimes.remove(targetUuid);
+            clearLaborRuntimeState(targetUuid);
             NPCDataManager.setNPCPregnancyData(server, targetUuid, "none", -1L);
             CustomEntity npc = BaseBuildingHiredData.findNPCByUuid(server, targetUuid);
             releaseEmploymentAndSync(server, targetUuid);
@@ -933,97 +944,9 @@ public final class NPCFamilyManager {
             if (!result.success() || assignment == null) {
                 return;
             }
-
-            server.getPlayerList().getPlayers().forEach(player ->
-                    NetworkManager.sendToPlayer(new EmploymentStateChangedPacket(assignment), player)
-            );
-            syncReleasedWorkplaceState(server, assignment);
+            com.xiaoliang.simukraft.network.EmploymentCommandPacket.applyFireSideEffectsAndBroadcast(server, assignment, false);
         } catch (Exception e) {
             LOGGER.warn("[NPCFamilyManager] 同步清理雇佣状态失败 npcUuid={}", npcUuid, e);
-        }
-    }
-
-    private static void syncReleasedWorkplaceState(MinecraftServer server, EmploymentAssignment assignment) {
-        if (server == null || assignment == null) {
-            return;
-        }
-
-        var service = EmploymentServices.get(server);
-        BlockPos workplacePos = assignment.workplacePos();
-        if (workplacePos == null) {
-            return;
-        }
-
-        switch (assignment.workBlockType()) {
-            case BUILD_BOX -> {
-                UUID builderUuid = service.findByWorkplaceAndJob(assignment.dimensionId(), workplacePos, JobType.BUILDER)
-                        .map(EmploymentAssignment::npcUuid)
-                        .orElse(null);
-                UUID plannerUuid = service.findByWorkplaceAndJob(assignment.dimensionId(), workplacePos, JobType.PLANNER)
-                        .map(EmploymentAssignment::npcUuid)
-                        .orElse(null);
-
-                SyncBuildBoxHireStatusPacket syncPacket = new SyncBuildBoxHireStatusPacket(
-                        workplacePos,
-                        builderUuid,
-                        plannerUuid,
-                        resolveNpcName(server, builderUuid),
-                        resolveNpcName(server, plannerUuid)
-                );
-                server.getPlayerList().getPlayers().forEach(player -> NetworkManager.sendToPlayer(syncPacket, player));
-            }
-            case COMMERCIAL_CONTROL_BOX -> {
-                EmploymentAssignment current = service.findByWorkplace(assignment.dimensionId(), workplacePos).orElse(null);
-                String buildingFileName = FileUtils.readCommercialBuildingFileNameCached(server, workplacePos);
-                SyncWorkBlockHireStatusPacket syncPacket = new SyncWorkBlockHireStatusPacket(
-                        workplacePos,
-                        resolveCommercialSyncType(buildingFileName),
-                        current != null ? current.npcUuid() : null,
-                        current != null ? resolveNpcName(server, current.npcUuid()) : null,
-                        resolveCommercialSyncJobType(current, buildingFileName),
-                        buildingFileName
-                );
-                server.getPlayerList().getPlayers().forEach(player -> NetworkManager.sendToPlayer(syncPacket, player));
-            }
-            case INDUSTRIAL_CONTROL_BOX -> {
-                EmploymentAssignment current = service.findByWorkplace(assignment.dimensionId(), workplacePos).orElse(null);
-                String buildingFileName = FileUtils.readIndustrialBuildingFileNameCached(server, workplacePos);
-                SyncWorkBlockHireStatusPacket syncPacket = new SyncWorkBlockHireStatusPacket(
-                        workplacePos,
-                        "industrial",
-                        current != null ? current.npcUuid() : null,
-                        current != null ? resolveNpcName(server, current.npcUuid()) : null,
-                        resolveIndustrialSyncJobType(current, buildingFileName),
-                        buildingFileName
-                );
-                server.getPlayerList().getPlayers().forEach(player -> NetworkManager.sendToPlayer(syncPacket, player));
-            }
-            case FARMLAND_BOX -> {
-                FarmlandHiredData.clearHiredFarmer(workplacePos);
-                FarmlandHiredData.saveAllFarmlandData(server);
-                com.xiaoliang.simukraft.job.jobs.farmer.FarmerWorkService.INSTANCE.clearTimers(workplacePos);
-
-                SyncFarmlandDataPacket.Response syncPacket = new SyncFarmlandDataPacket.Response(
-                        workplacePos,
-                        null,
-                        null,
-                        null,
-                        0
-                );
-                server.getPlayerList().getPlayers().forEach(player -> NetworkManager.sendToPlayer(syncPacket, player));
-            }
-            case LOGISTICS_SERVER_BOX -> {
-                com.xiaoliang.simukraft.world.LogisticsHiredData.removeServerBoxHired(server, workplacePos);
-                SyncLogisticsHireStatusPacket syncPacket = new SyncLogisticsHireStatusPacket(
-                        workplacePos,
-                        null,
-                        null,
-                        null
-                );
-                server.getPlayerList().getPlayers().forEach(player -> NetworkManager.sendToPlayer(syncPacket, player));
-            }
-            default -> {
-            }
         }
     }
 
@@ -1050,81 +973,6 @@ public final class NPCFamilyManager {
         npc.setJob("unemployed");
         npc.resetToIdle();
         NPCDataManager.saveJobData(npc);
-    }
-
-    @Nullable
-    private static String resolveNpcName(MinecraftServer server, @Nullable UUID npcUuid) {
-        if (server == null || npcUuid == null) {
-            return null;
-        }
-        CustomEntity loadedNpc = BaseBuildingHiredData.findNPCByUuid(server, npcUuid);
-        return loadedNpc != null ? loadedNpc.getFullName() : NPCDataManager.getNPCNameByUUID(server, npcUuid);
-    }
-
-    private static String resolveCommercialSyncType(@Nullable String buildingFileName) {
-        if (buildingFileName != null && !buildingFileName.isBlank()) {
-            var config = com.xiaoliang.simukraft.building.CommercialBuildingManager
-                    .getConfig(buildingFileName.replace(".sk", "").toLowerCase());
-            if (config != null) {
-                if (config.getBuildingName() != null && !config.getBuildingName().isBlank()) {
-                    return config.getBuildingName();
-                }
-                if (config.getWorkBlockHint() != null && !config.getWorkBlockHint().isBlank()) {
-                    return config.getWorkBlockHint();
-                }
-            }
-        }
-        return "commercial";
-    }
-
-    private static String resolveCommercialSyncJobType(@Nullable EmploymentAssignment currentAssignment,
-                                                       @Nullable String buildingFileName) {
-        String configJobType = readCommercialJobType(buildingFileName);
-        if (configJobType != null && !configJobType.isBlank()) {
-            return configJobType;
-        }
-        if (currentAssignment != null) {
-            return LegacyJobTypeMapper.toLegacy(currentAssignment.jobType());
-        }
-        return "shopkeeper";
-    }
-
-    private static String resolveIndustrialSyncJobType(@Nullable EmploymentAssignment currentAssignment,
-                                                       @Nullable String buildingFileName) {
-        String configJobType = readIndustrialJobType(buildingFileName);
-        if (configJobType != null && !configJobType.isBlank()) {
-            return configJobType;
-        }
-        if (currentAssignment != null) {
-            return LegacyJobTypeMapper.toLegacy(currentAssignment.jobType());
-        }
-        return "worker";
-    }
-
-    @Nullable
-    private static String readCommercialJobType(@Nullable String buildingFileName) {
-        if (buildingFileName == null || buildingFileName.isBlank()) {
-            return null;
-        }
-        var config = com.xiaoliang.simukraft.building.CommercialBuildingManager
-                .getConfig(buildingFileName.replace(".sk", "").toLowerCase());
-        if (config == null || config.getJobType() == null || config.getJobType().isBlank()) {
-            return null;
-        }
-        return config.getJobType();
-    }
-
-    @Nullable
-    private static String readIndustrialJobType(@Nullable String buildingFileName) {
-        if (buildingFileName == null || buildingFileName.isBlank()) {
-            return null;
-        }
-        var config = com.xiaoliang.simukraft.building.IndustrialBuildingManager
-                .getConfig(buildingFileName.replace(".sk", "").toLowerCase());
-        if (config == null || config.getJobType() == null || config.getJobType().isBlank()) {
-            return null;
-        }
-        return config.getJobType();
     }
 
     private static void spawnHeartParticles(ServerLevel level, CustomEntity npc) {
@@ -1165,27 +1013,55 @@ public final class NPCFamilyManager {
 
         HospitalTarget fallbackHospital = null;
         for (ControlBoxDataManager.ControlBoxData box : allBoxes) {
-            if (box == null || !isMedicalControlBox(box)) {
+            HospitalTarget target = resolveHospitalTarget(server, box, true);
+            if (target == null) {
                 continue;
             }
 
-            ServerLevel level = resolveLevel(server, box.world);
-            if (level != null) {
-                HospitalTarget target = new HospitalTarget(level, box.position);
-                if (cityId != null && Objects.equals(cityId, box.cityId)) {
-                    hospitalTargetCache.put(cacheKey, new CachedHospitalTarget(target, gameTime));
-                    return target;
-                }
-                if (fallbackHospital == null) {
-                    fallbackHospital = target;
-                }
+            if (cityId != null && Objects.equals(cityId, box.cityId)) {
+                hospitalTargetCache.put(cacheKey, new CachedHospitalTarget(target, gameTime));
+                return target;
+            }
+            if (fallbackHospital == null) {
+                fallbackHospital = target;
             }
         }
         hospitalTargetCache.put(cacheKey, new CachedHospitalTarget(fallbackHospital, gameTime));
         return fallbackHospital;
     }
 
-    private static boolean isMedicalControlBox(ControlBoxDataManager.ControlBoxData box) {
+    @Nullable
+    private static HospitalTarget resolveHospitalTarget(MinecraftServer server,
+                                                        @Nullable ControlBoxDataManager.ControlBoxData box,
+                                                        boolean requireParturition) {
+        if (box == null) {
+            return null;
+        }
+
+        ServerLevel level = resolveLevel(server, box.world);
+        if (level == null) {
+            return null;
+        }
+
+        MedicalBuildingConfig config = MedicalBuildingManager.getConfig(box.buildingFileName);
+        if (config != null) {
+            if (requireParturition && !config.canParturition()) {
+                return null;
+            }
+            String buildingName = config.buildingName();
+            if (buildingName == null || buildingName.isBlank()) {
+                buildingName = box.buildingName;
+            }
+            return new HospitalTarget(level, box.position, buildingName, box.buildingFileName, config.canParturition());
+        }
+
+        if (!isLegacyMedicalControlBox(box)) {
+            return null;
+        }
+        return new HospitalTarget(level, box.position, resolveHospitalName(box, null), box.buildingFileName, true);
+    }
+
+    private static boolean isLegacyMedicalControlBox(ControlBoxDataManager.ControlBoxData box) {
         if (box == null) {
             return false;
         }
@@ -1216,6 +1092,107 @@ public final class NPCFamilyManager {
             }
         }
         return false;
+    }
+
+    @Nullable
+    private static BlockPos resolveLaborBed(HospitalTarget hospital, CustomEntity npc, @Nullable BlockPos preferredBedPos) {
+        if (hospital == null || npc == null) {
+            return null;
+        }
+        if (isValidHospitalBed(hospital.level(), preferredBedPos)) {
+            laborBedAssignments.put(npc.getUUID(), preferredBedPos);
+            return preferredBedPos;
+        }
+
+        BlockPos foundBed = NPCRestHandler.findFamilyBed(hospital.level(), hospital.controlBoxPos(), npc);
+        if (foundBed != null) {
+            laborBedAssignments.put(npc.getUUID(), foundBed);
+        }
+        return foundBed;
+    }
+
+    private static boolean isValidHospitalBed(ServerLevel level, @Nullable BlockPos bedPos) {
+        if (level == null || bedPos == null || !level.isLoaded(bedPos)) {
+            return false;
+        }
+        return level.getBlockState(bedPos).getBlock() instanceof BedBlock;
+    }
+
+    private static boolean guideDoctorToLaborBed(MinecraftServer server, HospitalTarget hospital, BlockPos bedPos) {
+        if (server == null || hospital == null || bedPos == null) {
+            return false;
+        }
+        EmploymentAssignment assignment = EmploymentServices.get(server)
+                .findByWorkplaceAndJob(hospital.level().dimension().location().toString(), hospital.controlBoxPos(), JobType.DOCTOR)
+                .orElse(null);
+        if (assignment == null) {
+            return false;
+        }
+
+        CustomEntity doctor = NPCEntityLocator.findNpc(server, assignment.npcUuid(), hospital.controlBoxPos(), false);
+        if (doctor == null || doctor.level() != hospital.level()) {
+            return false;
+        }
+
+        BlockPos doctorTarget = findNearbyStandPos(hospital.level(), bedPos, Direction.NORTH);
+        if (doctorTarget == null) {
+            doctorTarget = hospital.controlBoxPos();
+        }
+
+        double distanceSqr = doctor.blockPosition().distSqr(doctorTarget);
+        if (distanceSqr > DOCTOR_READY_DISTANCE_SQR) {
+            doctor.setNoAi(false);
+            moveNpcIntoManagedArea(doctor, doctorTarget);
+            return false;
+        }
+
+        doctor.stopNewPathfinder();
+        doctor.getNavigation().stop();
+        return true;
+    }
+
+    private static void notifyHospitalQueueIfNeeded(MinecraftServer server, CustomEntity npc, HospitalTarget hospital) {
+        if (server == null || npc == null || hospital == null || npc.getCityId() == null) {
+            return;
+        }
+        long gameTime = hospital.level().getGameTime();
+        String queueKey = hospital.level().dimension().location() + ":" + hospital.controlBoxPos().asLong();
+        long lastMessageTime = hospitalQueueMessageTimes.getOrDefault(queueKey, Long.MIN_VALUE);
+        if (gameTime - lastMessageTime < HOSPITAL_QUEUE_MESSAGE_INTERVAL_TICKS) {
+            return;
+        }
+
+        hospitalQueueMessageTimes.put(queueKey, gameTime);
+        Component message = Component.translatable(
+                "message.simukraft.medical.queue_full",
+                resolveHospitalName(null, hospital)
+        );
+        CityMessageUtils.sendToCityGroup(server, npc.getCityId(), message);
+    }
+
+    private static String resolveHospitalName(@Nullable ControlBoxDataManager.ControlBoxData box,
+                                              @Nullable HospitalTarget hospital) {
+        if (hospital != null && hospital.buildingName() != null && !hospital.buildingName().isBlank()) {
+            return hospital.buildingName();
+        }
+        if (box != null) {
+            MedicalBuildingConfig config = MedicalBuildingManager.getConfig(box.buildingFileName);
+            if (config != null && config.buildingName() != null && !config.buildingName().isBlank()) {
+                return config.buildingName();
+            }
+            if (box.buildingName != null && !box.buildingName.isBlank()) {
+                return box.buildingName;
+            }
+        }
+        return "医院";
+    }
+
+    private static void clearLaborRuntimeState(UUID npcUuid) {
+        if (npcUuid == null) {
+            return;
+        }
+        laborStartGameTimes.remove(npcUuid);
+        laborBedAssignments.remove(npcUuid);
     }
 
     @Nullable

@@ -1,5 +1,7 @@
 package com.xiaoliang.simukraft.network;
 
+import com.xiaoliang.simukraft.building.ControlBoxDataManager;
+import com.xiaoliang.simukraft.building.MedicalBuildingManager;
 import com.xiaoliang.simukraft.entity.WorkStatus;
 import com.xiaoliang.simukraft.event.WorldEvents;
 import com.xiaoliang.simukraft.Simukraft;
@@ -170,7 +172,7 @@ public class EmploymentCommandPacket {
 
             if (result.success() && result.assignment() != null) {
                 Simukraft.LOGGER.debug("[EmploymentCommandPacket] applying side effects for assignment={}", result.assignment());
-                applyNpcSideEffects(player.getServer(), result.assignment(), commandType, workplacePos);
+                applyNpcSideEffects(player.getServer(), result.assignment(), commandType, workplacePos, true);
 
                 var stateChanged = new EmploymentStateChangedPacket(result.assignment());
                 player.getServer().getPlayerList().getPlayers().forEach(p -> NetworkManager.sendToPlayer(stateChanged, p));
@@ -302,10 +304,50 @@ public class EmploymentCommandPacket {
         return service.findByWorkplace(actualDimension, workplacePos);
     }
 
+    public static void applyFireSideEffectsAndBroadcast(MinecraftServer server,
+                                                        com.xiaoliang.simukraft.employment.domain.EmploymentAssignment assignment,
+                                                        boolean sendDefaultCityMessage) {
+        if (server == null || assignment == null) {
+            return;
+        }
+        EmploymentCommandPacket packet = new EmploymentCommandPacket(
+                EmploymentCommandType.FIRE_BY_NPC,
+                assignment.npcUuid(),
+                assignment.workplacePos(),
+                assignment.workBlockType().toLegacyKey(),
+                LegacyJobTypeMapper.toLegacy(assignment.jobType()),
+                assignment.dimensionId()
+        );
+        packet.applyNpcSideEffects(server, assignment, EmploymentCommandType.FIRE_BY_NPC, assignment.workplacePos(), sendDefaultCityMessage);
+
+        EmploymentStateChangedPacket stateChanged = new EmploymentStateChangedPacket(assignment);
+        server.getPlayerList().getPlayers().forEach(player -> NetworkManager.sendToPlayer(stateChanged, player));
+
+        BlockPos workplacePos = assignment.workplacePos();
+        if (workplacePos != null) {
+            String foundNpcName = NPCDataManager.getNPCNameByUUID(server, assignment.npcUuid());
+            final String npcName = foundNpcName == null ? "" : foundNpcName;
+            server.getPlayerList().getPlayers().forEach(player ->
+                    NetworkManager.sendToPlayer(
+                            new NPCWorkStatusPacket(
+                                    assignment.npcUuid(),
+                                    WorkStatus.IDLE,
+                                    workplacePos,
+                                    npcName,
+                                    "unemployed"
+                            ),
+                            player
+                    )
+            );
+            packet.broadcastLegacyClientSync(server, assignment, npcName, "unemployed", EmploymentCommandType.FIRE_BY_NPC);
+        }
+    }
+
     private void applyNpcSideEffects(MinecraftServer server,
                                      com.xiaoliang.simukraft.employment.domain.EmploymentAssignment assignment,
                                      EmploymentCommandType type,
-                                     BlockPos targetPos) {
+                                     BlockPos targetPos,
+                                     boolean sendDefaultCityMessage) {
         Simukraft.LOGGER.info("[EmploymentCommandPacket] applyNpcSideEffects type={}, workBlockType={}, jobType={}",
                 type, assignment.workBlockType(), assignment.jobType());
         CustomEntity npc = BuildBoxHiredData.findNPCByUuid(server, assignment.npcUuid());
@@ -383,14 +425,17 @@ public class EmploymentCommandPacket {
                         case "planner" -> "message.simukraft.planner.fired";
                         case "farmer" -> "message.simukraft.farmer.fired";
                         case "shepherd", "butcher" -> "message.simukraft.industrial_employee.fired";
+                        case "doctor" -> "message.simukraft.doctor.fired";
                         case "warehouse_manager" -> "message.simukraft.warehouse_manager.fired";
                         default -> "message.simukraft.builder.fired";
                     };
                 }
-                Component npcName = npc.getCustomName() != null ? npc.getCustomName() : Component.literal(npc.getFullName());
-                Component fireMsg = Component.translatable(fireMessageKey, npcName)
-                        .withStyle(style -> style.withColor(0xFF5555));
-                com.xiaoliang.simukraft.utils.CityMessageUtils.sendToCityGroup(server, npc.getCityId(), fireMsg);
+                if (sendDefaultCityMessage) {
+                    Component npcName = npc.getCustomName() != null ? npc.getCustomName() : Component.literal(npc.getFullName());
+                    Component fireMsg = Component.translatable(fireMessageKey, npcName)
+                            .withStyle(style -> style.withColor(0xFF5555));
+                    com.xiaoliang.simukraft.utils.CityMessageUtils.sendToCityGroup(server, npc.getCityId(), fireMsg);
+                }
             } else {
                 // NPC未加载，直接修改jobdata.sk文件
                 Simukraft.LOGGER.info("[EmploymentCommandPacket] NPC未加载，直接修改jobdata.sk文件 - NPC: {}",
@@ -444,6 +489,16 @@ public class EmploymentCommandPacket {
                 String jobTypeFromConfig = readJobTypeFromIndustrialConfig(server, buildingFileName);
                 npcJob = jobTypeFromConfig != null ? jobTypeFromConfig : legacyJob;
                 Simukraft.LOGGER.debug("[EmploymentCommandPacket] industrial job resolved to {} from {}", npcJob, buildingFileName);
+            }
+        } else if (assignment.workBlockType() == WorkBlockType.OTHER_CONTROL_BOX) {
+            String buildingFileName = readOtherBuildingFileName(server, assignment.workplacePos());
+            var medicalConfig = MedicalBuildingManager.getConfig(buildingFileName);
+            if (medicalConfig != null && medicalConfig.isDoctorJob()) {
+                npcJob = medicalConfig.jobType();
+            } else if (jobType != null && !jobType.isBlank()) {
+                npcJob = jobType;
+            } else {
+                npcJob = legacyJob;
             }
         } else if (assignment.jobType() == JobType.COMMERCIAL_GENERIC && jobType != null && !jobType.isBlank()) {
             // 对于其他商业建筑类型，使用原始的jobType
@@ -499,6 +554,7 @@ public class EmploymentCommandPacket {
                 case "shepherd" -> new ItemStack(Items.SHEARS);
                 case "butcher" -> new ItemStack(Items.GOLDEN_AXE);
                 case "farmer" -> new ItemStack(Items.STONE_HOE);
+                case "doctor" -> new ItemStack(Items.POTION);
                 case "warehouse_manager" -> new ItemStack(Items.BOOK);
                 default -> ItemStack.EMPTY;
             };
@@ -520,6 +576,7 @@ public class EmploymentCommandPacket {
                 case "planner" -> "message.simukraft.planner.hired";
                 case "farmer" -> "message.simukraft.farmer.hired";
                 case "shepherd", "butcher" -> "message.simukraft.industrial_employee.hired";
+                case "doctor" -> "message.simukraft.doctor.hired";
                 case "warehouse_manager" -> "message.simukraft.warehouse_manager.hired";
                 default -> null;
             };
@@ -980,9 +1037,36 @@ public class EmploymentCommandPacket {
                 );
                 server.getPlayerList().getPlayers().forEach(player -> NetworkManager.sendToPlayer(syncPacket, player));
             }
+            case OTHER_CONTROL_BOX -> {
+                boolean hired = commandType == EmploymentCommandType.HIRE;
+                String buildingFileName = readOtherBuildingFileName(server, assignment.workplacePos());
+                String syncJobType = broadcastJob;
+                var medicalConfig = MedicalBuildingManager.getConfig(buildingFileName);
+                if (medicalConfig != null && medicalConfig.jobType() != null && !medicalConfig.jobType().isBlank()) {
+                    syncJobType = medicalConfig.jobType();
+                }
+                SyncWorkBlockHireStatusPacket syncPacket = new SyncWorkBlockHireStatusPacket(
+                        assignment.workplacePos(),
+                        "other_control_box",
+                        hired ? assignment.npcUuid() : null,
+                        hired ? npcName : null,
+                        syncJobType,
+                        buildingFileName
+                );
+                server.getPlayerList().getPlayers().forEach(player -> NetworkManager.sendToPlayer(syncPacket, player));
+            }
             default -> {
             }
         }
+    }
+
+    private String readOtherBuildingFileName(MinecraftServer server, BlockPos workplacePos) {
+        ControlBoxDataManager.ControlBoxData controlBoxData =
+                ControlBoxDataManager.readControlBox(server, workplacePos, "other_control_box");
+        if (controlBoxData == null || controlBoxData.buildingFileName == null || controlBoxData.buildingFileName.isBlank()) {
+            return "";
+        }
+        return controlBoxData.buildingFileName;
     }
 
     private String resolveCommercialSyncType(JobType jobType, String buildingFileName) {

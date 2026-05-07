@@ -3,9 +3,7 @@ package com.xiaoliang.simukraft.block;
 import com.xiaoliang.simukraft.employment.service.EmploymentCommands;
 import com.xiaoliang.simukraft.employment.service.DefaultEmploymentService;
 import com.xiaoliang.simukraft.employment.service.EmploymentServices;
-import com.xiaoliang.simukraft.entity.WorkStatus;
 import com.xiaoliang.simukraft.init.ModSoundEvents;
-import com.xiaoliang.simukraft.network.NPCWorkStatusPacket;
 import com.xiaoliang.simukraft.network.NetworkManager;
 import com.xiaoliang.simukraft.planning.PlanningTaskManager;
 import com.xiaoliang.simukraft.utils.BuildBoxFloatingEntityManager;
@@ -19,7 +17,6 @@ import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -91,27 +88,12 @@ public class BuildBoxBlock extends Block {
                         // 执行解雇逻辑
                         var releaseResult = employmentService.fireByNpc(new EmploymentCommands.FireByNpcCommand(npcUuid));
                         if (releaseResult.success() && releaseResult.assignment() != null) {
-                            NetworkManager.sendToAll(new com.xiaoliang.simukraft.network.EmploymentStateChangedPacket(releaseResult.assignment()), serverLevel);
+                            com.xiaoliang.simukraft.network.EmploymentCommandPacket.applyFireSideEffectsAndBroadcast(
+                                    server, releaseResult.assignment(), false
+                            );
                         }
 
                         if (npc != null) {
-                            // 根据职业清除状态
-                            if (assignment.jobType() == com.xiaoliang.simukraft.employment.domain.JobType.BUILDER) {
-                                clearBuilderState(serverLevel, npcUuid, npc);
-                            } else if (assignment.jobType() == com.xiaoliang.simukraft.employment.domain.JobType.PLANNER) {
-                                clearPlannerState(serverLevel, npcUuid, npc);
-                            } else {
-                                resetNpcAfterWorkStopped(npc);
-                            }
-
-                            // 发送状态更新数据包给客户端
-                            server.getPlayerList().getPlayers().forEach(player -> {
-                                NetworkManager.sendToPlayer(
-                                    new NPCWorkStatusPacket(npc.getUUID(), WorkStatus.IDLE, pos),
-                                    player
-                                );
-                            });
-
                             // 发送通知消息
                             String npcName = npc.getFullName();
                             UUID cityId = npc.getCityId();
@@ -216,30 +198,4 @@ public class BuildBoxBlock extends Block {
         }
     }
 
-    private void clearBuilderState(ServerLevel serverLevel, UUID npcUuid, com.xiaoliang.simukraft.entity.CustomEntity npc) {
-        if (npc.getConstructionTask() != null) {
-            npc.getConstructionTask().cancel();
-        }
-        com.xiaoliang.simukraft.job.jobs.builder.BuilderWorkService.INSTANCE.removeConstructionTask(serverLevel.getServer(), npcUuid);
-        resetNpcAfterWorkStopped(npc);
-    }
-
-    private void clearPlannerState(ServerLevel serverLevel, UUID npcUuid, com.xiaoliang.simukraft.entity.CustomEntity npc) {
-        var taskManager = PlanningTaskManager.get(serverLevel);
-        var activeTask = taskManager.getActiveTaskByNpc(npcUuid);
-        if (activeTask != null) {
-            taskManager.cancelTask(activeTask.getTaskId());
-        }
-        resetNpcAfterWorkStopped(npc);
-    }
-
-    private void resetNpcAfterWorkStopped(com.xiaoliang.simukraft.entity.CustomEntity npc) {
-        npc.setWorkStatus(WorkStatus.IDLE);
-        npc.setWorking(false);
-        npc.setJob("unemployed");
-        npc.resetToIdle();
-        npc.setItemInHand(InteractionHand.MAIN_HAND, Objects.requireNonNull(ItemStack.EMPTY));
-        npc.setItemInHand(InteractionHand.OFF_HAND, Objects.requireNonNull(ItemStack.EMPTY));
-        com.xiaoliang.simukraft.utils.NPCDataManager.saveJobData(npc);
-    }
 }

@@ -1,6 +1,8 @@
 package com.xiaoliang.simukraft.network;
 
 import com.xiaoliang.simukraft.Simukraft;
+import com.xiaoliang.simukraft.building.ControlBoxDataManager;
+import com.xiaoliang.simukraft.building.MedicalBuildingManager;
 import com.xiaoliang.simukraft.employment.domain.JobType;
 import com.xiaoliang.simukraft.employment.service.EmploymentServices;
 import com.xiaoliang.simukraft.employment.service.LegacyJobTypeMapper;
@@ -22,6 +24,29 @@ final class LegacyHireStatusResolver {
     static WorkBlockHireStatus resolveWorkBlockStatus(MinecraftServer server, ServerPlayer player, BlockPos workBlockPos, String workBlockType) {
         String dimensionId = player.serverLevel().dimension().location().toString();
         var service = EmploymentServices.get(server);
+
+        boolean isOtherControlBox = "other".equals(workBlockType) || "other_control_box".equals(workBlockType);
+        if (isOtherControlBox) {
+            ControlBoxDataManager.ControlBoxData controlBoxData =
+                    ControlBoxDataManager.readControlBox(server, workBlockPos, "other_control_box");
+            String buildingFileName = controlBoxData != null ? controlBoxData.buildingFileName : "";
+            var medicalConfig = MedicalBuildingManager.getConfig(buildingFileName);
+            if (medicalConfig == null) {
+                return new WorkBlockHireStatus(null, null, "", buildingFileName);
+            }
+
+            var employment = service.findByWorkplace(dimensionId, workBlockPos);
+            if (employment.isPresent()) {
+                var assignment = employment.get();
+                return new WorkBlockHireStatus(
+                        assignment.npcUuid(),
+                        resolveNpcName(server, assignment.npcUuid()),
+                        LegacyJobTypeMapper.toLegacy(assignment.jobType()),
+                        buildingFileName
+                );
+            }
+            return new WorkBlockHireStatus(null, null, medicalConfig.jobType(), buildingFileName);
+        }
 
         // 对于商业建筑，优先从 CommercialHiredData 读取原始 jobType（支持自定义职业）
         // 检查是否是商业建筑类型（从JSON配置或通用类型）

@@ -6,6 +6,7 @@ public enum JobType {
     FARMER,
     COMMERCIAL_GENERIC,
     INDUSTRIAL_GENERIC,
+    DOCTOR,
     WAREHOUSE_MANAGER
 }
 

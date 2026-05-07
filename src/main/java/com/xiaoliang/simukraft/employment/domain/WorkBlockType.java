@@ -5,6 +5,7 @@ public enum WorkBlockType {
     FARMLAND_BOX,
     INDUSTRIAL_CONTROL_BOX,
     COMMERCIAL_CONTROL_BOX,
+    OTHER_CONTROL_BOX,
     LOGISTICS_SERVER_BOX;
 
     public String toLegacyKey() {
@@ -13,6 +14,7 @@ public enum WorkBlockType {
             case FARMLAND_BOX -> "farmland";
             case INDUSTRIAL_CONTROL_BOX -> "industrial";
             case COMMERCIAL_CONTROL_BOX -> "commercial";
+            case OTHER_CONTROL_BOX -> "other_control_box";
             case LOGISTICS_SERVER_BOX -> "logistics";
         };
     }
@@ -26,6 +28,7 @@ public enum WorkBlockType {
             case "farmland", "farmland_box" -> FARMLAND_BOX;
             case "industrial", "wool_farm", "beef_farm" -> INDUSTRIAL_CONTROL_BOX;
             case "commercial", "bakery", "meat_shop", "fruit_shop", "building_material_store" -> COMMERCIAL_CONTROL_BOX;
+            case "other", "other_control_box" -> OTHER_CONTROL_BOX;
             case "logistics", "logistics_server_box" -> LOGISTICS_SERVER_BOX;
             default -> null;
         };

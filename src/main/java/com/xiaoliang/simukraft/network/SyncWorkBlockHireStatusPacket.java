@@ -104,6 +104,23 @@ public class SyncWorkBlockHireStatusPacket {
                     }
                     break;
 
+                case "other":
+                case "other_control_box":
+                    if (employeeUuid != null) {
+                        com.xiaoliang.simukraft.client.gui.OtherControlBoxClientData.setHiredDoctor(workBlockPos, employeeUuid);
+                    } else {
+                        com.xiaoliang.simukraft.client.gui.OtherControlBoxClientData.clearHiredDoctor(workBlockPos);
+                    }
+                    if (buildingFileName != null && !buildingFileName.isEmpty()) {
+                        com.xiaoliang.simukraft.client.gui.OtherControlBoxClientData.setBuildingFileName(workBlockPos, buildingFileName);
+                    }
+                    if (minecraft.screen instanceof com.xiaoliang.simukraft.client.gui.OtherControlBoxScreen screen) {
+                        if (screen.getControlBoxPos().equals(workBlockPos)) {
+                            screen.refreshButtonStates();
+                        }
+                    }
+                    break;
+
                 default:
                     return;
             }

@@ -439,6 +439,7 @@ public final class DebugWorldGenerator {
                                                BlockPos placePos,
                                                PlacedTemplate template,
                                                String buildingName,
+                                               String buildingFileName,
                                                UUID cityId) {
         for (BlockPos residentialPos : offsetPositions(placePos, template.markers().residentialControlBoxes())) {
             ResidentialControlBoxBlock.activatePendingResidence(level, residentialPos);
@@ -446,7 +447,7 @@ public final class DebugWorldGenerator {
 
         for (BlockPos otherPos : offsetPositions(placePos, template.markers().otherControlBoxes())) {
             if (level.getServer() != null) {
-                ControlBoxDataManager.writeOtherControlBox(level.getServer(), otherPos, buildingName, null, cityId);
+                ControlBoxDataManager.writeOtherControlBox(level.getServer(), otherPos, buildingName, buildingFileName, null, cityId);
             }
         }
     }
@@ -634,7 +635,7 @@ public final class DebugWorldGenerator {
                         continue;
                     }
 
-                    finalizeBusinessBlocks(level, placePos, template, buildingName, cityId);
+                    finalizeBusinessBlocks(level, placePos, template, buildingName, buildingFileName, cityId);
                     residentialCount += template.markers().residentialControlBoxes().size();
 
                     rowXOffset += template.size().getX() + BUILDING_SPACING;

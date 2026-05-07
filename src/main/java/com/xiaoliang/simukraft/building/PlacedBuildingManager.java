@@ -307,7 +307,10 @@ public class PlacedBuildingManager {
             var releaseResult = EmploymentServices.get(server).onWorkBlockRemoved(
                     new EmploymentCommands.WorkBlockRemovedCommand(dimensionId, building.controlBoxPos)
             );
-            if (releaseResult.success()) {
+            if (releaseResult.success() && releaseResult.assignment() != null) {
+                com.xiaoliang.simukraft.network.EmploymentCommandPacket.applyFireSideEffectsAndBroadcast(
+                        server, releaseResult.assignment(), false
+                );
                 LOGGER.info("[PlacedBuildingManager] 已解雇建筑 {} 的员工", building.buildingName);
             }
         }

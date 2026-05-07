@@ -308,10 +308,7 @@ public class NPCWorkStatusPacket {
             if (status == WorkStatus.IDLE) {
                 var releaseResult = service.fireByNpc(new EmploymentCommands.FireByNpcCommand(npcUuid));
                 if (releaseResult.success() && releaseResult.assignment() != null) {
-                    // 清理对应的legacy数据，防止LegacyHireStatusResolver回填导致"复活"
-                    cleanupLegacyDataOnFire(server, npcUuid, releaseResult.assignment());
-                    server.getPlayerList().getPlayers().forEach(p ->
-                            NetworkManager.sendToPlayer(new EmploymentStateChangedPacket(releaseResult.assignment()), p));
+                    EmploymentCommandPacket.applyFireSideEffectsAndBroadcast(server, releaseResult.assignment(), false);
                 } else {
                     // v2中未找到记录，也需要尝试清理可能存在的legacy数据
                     cleanupAllLegacyDataByNpc(server, npcUuid);
@@ -333,7 +330,7 @@ public class NPCWorkStatusPacket {
             // Reassignment is handled as release-then-hire in Phase 2.
             var existingResult = service.fireByNpc(new EmploymentCommands.FireByNpcCommand(npcUuid));
             if (existingResult.success() && existingResult.assignment() != null) {
-                cleanupLegacyDataOnFire(server, npcUuid, existingResult.assignment());
+                EmploymentCommandPacket.applyFireSideEffectsAndBroadcast(server, existingResult.assignment(), false);
             }
 
             var hireResult = service.hire(new EmploymentCommands.HireCommand(
@@ -403,6 +400,9 @@ public class NPCWorkStatusPacket {
                     if (commercialData.remove(assignment.workplacePos()) != null) {
                         com.xiaoliang.simukraft.world.CommercialHiredData.saveHiredEmployees(server, commercialData);
                     }
+                }
+                case OTHER_CONTROL_BOX -> {
+                    // other_control_box 已迁移到统一雇佣仓储，这里无 legacy 数据需要清理。
                 }
                 case LOGISTICS_SERVER_BOX -> { /* LogisticsData 自管理 */ }
             }
@@ -505,6 +505,9 @@ public class NPCWorkStatusPacket {
                                     buildingFileName != null ? buildingFileName : "",
                                     buildingName != null ? buildingName : ""));
                     com.xiaoliang.simukraft.world.CommercialHiredData.saveHiredEmployees(server, commercialData);
+                }
+                case OTHER_CONTROL_BOX -> {
+                    // other_control_box 已迁移到统一雇佣仓储，这里无 legacy 数据需要双写。
                 }
                 case LOGISTICS_SERVER_BOX -> { /* LogisticsData 自管理 */ }
             }

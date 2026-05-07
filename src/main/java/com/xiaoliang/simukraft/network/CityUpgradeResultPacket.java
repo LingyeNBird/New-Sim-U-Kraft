@@ -53,7 +53,9 @@ public class CityUpgradeResultPacket {
 
     private Component toComponent() {
         return switch (resultCode) {
+            case "started" -> Component.translatable("message.simukraft.city_upgrade.started", targetLevel);
             case "success" -> Component.translatable("message.simukraft.city_upgrade.success", targetLevel);
+            case "already_upgrading" -> Component.translatable("message.simukraft.city_upgrade.already_upgrading");
             case "no_permission" -> Component.translatable("message.simukraft.city_upgrade.no_permission");
             case "city_not_found" -> Component.translatable("message.simukraft.city_upgrade.city_not_found");
             case "invalid_target" -> Component.translatable("message.simukraft.city_upgrade.invalid_target");

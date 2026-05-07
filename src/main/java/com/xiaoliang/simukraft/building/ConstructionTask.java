@@ -987,6 +987,10 @@ public class ConstructionTask {
         return cost;
     }
 
+    public Set<ChunkPos> getRequiredWorkflowChunks() {
+        return requiredWorkflowChunks;
+    }
+
     public int getProgress() {
         if (blocksToPlace.isEmpty()) return 100;
         return (int) ((double) currentBlockIndex / blocksToPlace.size() * 100);

@@ -192,6 +192,14 @@ public class StartConstructionPacket {
                         cost
                     );
 
+                    if (!com.xiaoliang.simukraft.world.CityTerritoryUtils.isChunkSetInsideCityTerritory(player.serverLevel(), builder.getCityId(), task.getRequiredWorkflowChunks())) {
+                        player.displayClientMessage(
+                                Objects.requireNonNull(Component.translatable("message.simukraft.construction.outside_city")),
+                                false
+                        );
+                        return;
+                    }
+
                     // 设置NPC建造任务
                     builder.setConstructionTask(task);
 

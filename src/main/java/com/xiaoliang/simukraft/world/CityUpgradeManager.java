@@ -71,16 +71,36 @@ public class CityUpgradeManager  {
 
     public boolean canUpgrade(CityData.CityInfo cityInfo, int targetLevel) {
         CityUpgrade upgrade = upgrades.get(targetLevel);
-        if (upgrade == null || targetLevel <= cityInfo.getCityLevel()) {
+        if (upgrade == null || targetLevel != cityInfo.getCityLevel() + 1) {
             return false;
         }
-        
+        return getMissingRequirement(cityInfo, targetLevel) == MissingRequirement.NONE;
+    }
+
+    public MissingRequirement getMissingRequirement(CityData.CityInfo cityInfo, int targetLevel) {
+        CityUpgrade upgrade = upgrades.get(targetLevel);
+        if (upgrade == null) {
+            return MissingRequirement.INVALID_TARGET;
+        }
+        if (targetLevel != cityInfo.getCityLevel() + 1) {
+            return MissingRequirement.INVALID_TARGET;
+        }
+
         Requirements requirements = upgrade.requirements();
-        int population = cityInfo.getCitizenIds().size();
-        double funds = cityInfo.getFunds();
-        
-        return population >= requirements.population() &&
-               funds >= requirements.funds();
+        if (cityInfo.getCitizenIds().size() < requirements.population()) {
+            return MissingRequirement.POPULATION;
+        }
+        if (cityInfo.getFunds() < requirements.funds()) {
+            return MissingRequirement.FUNDS;
+        }
+        return MissingRequirement.NONE;
+    }
+
+    public enum MissingRequirement {
+        NONE,
+        INVALID_TARGET,
+        POPULATION,
+        FUNDS
     }
 
     public CityUpgrade getNextUpgrade(CityData.CityInfo cityInfo) {

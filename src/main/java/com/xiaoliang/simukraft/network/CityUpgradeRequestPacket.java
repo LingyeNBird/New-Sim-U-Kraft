@@ -62,6 +62,12 @@ public class CityUpgradeRequestPacket {
             return;
         }
 
+        if (com.xiaoliang.simukraft.world.CityUpgradeProgressManager.hasPendingUpgrade(cityInfo.getCityId())) {
+            sendResult(player, false, "already_upgrading", message.targetLevel);
+            ctx.get().setPacketHandled(true);
+            return;
+        }
+
         // 检查玩家是否有权限管理城市（市长或官员，使用玩家名）
         String playerName = player.getName().getString();
         if (!cityInfo.canManageCity(playerName)) {
@@ -77,8 +83,9 @@ public class CityUpgradeRequestPacket {
             return;
         }
 
-        if (!upgradeManager.canUpgrade(cityInfo, message.targetLevel)) {
-            sendResult(player, false, "not_upgradeable", message.targetLevel);
+        com.xiaoliang.simukraft.world.CityUpgradeManager.MissingRequirement missingRequirement = upgradeManager.getMissingRequirement(cityInfo, message.targetLevel);
+        if (missingRequirement != com.xiaoliang.simukraft.world.CityUpgradeManager.MissingRequirement.NONE) {
+            sendResult(player, false, toResultCode(missingRequirement), message.targetLevel);
             ctx.get().setPacketHandled(true);
             return;
         }
@@ -111,37 +118,30 @@ public class CityUpgradeRequestPacket {
             return;
         }
 
-        // 扣除物品
-        removeItems(player, requirements);
-
-        // 扣除资金
-        cityInfo.setFunds(cityInfo.getFunds() - requirements.funds());
-
-        // 升级城市
-        cityInfo.setCityLevel(message.targetLevel);
-        cityData.setDirty();
-
-        // 同步HUD数据
-        NetworkManager.syncCityHUDData(cityInfo.getCityId(), level);
-
-        // 根据升级等级选择toast类型（0~4使用w1，5~8使用w2，9~11使用g1）
-        String toastType;
-        if (message.targetLevel <= 4) {
-            toastType = "w1";
-        } else if (message.targetLevel <= 8) {
-            toastType = "w2";
-        } else {
-            toastType = "g1";
-        }
-
-        // 发送升级成功toast通知，包含升级等级
-        ShowToastPacket.sendToPlayer(player, toastType, message.targetLevel);
-        sendResult(player, true, "success", message.targetLevel);
+        com.xiaoliang.simukraft.world.CityUpgradeProgressManager.startUpgrade(
+                player,
+                level,
+                cityData,
+                message.cityCorePos,
+                cityInfo.getCityId(),
+                message.targetLevel,
+                requirements
+        );
+        sendResult(player, true, "started", message.targetLevel);
         ctx.get().setPacketHandled(true);
     }
 
     private static void sendResult(net.minecraft.server.level.ServerPlayer player, boolean success, String resultCode, int targetLevel) {
         NetworkManager.sendToPlayer(new CityUpgradeResultPacket(success, resultCode, targetLevel), player);
+    }
+
+    private static String toResultCode(com.xiaoliang.simukraft.world.CityUpgradeManager.MissingRequirement missingRequirement) {
+        return switch (missingRequirement) {
+            case POPULATION -> "insufficient_population";
+            case FUNDS -> "insufficient_funds";
+            case INVALID_TARGET -> "invalid_target";
+            default -> "not_upgradeable";
+        };
     }
     
     /**
@@ -180,30 +180,6 @@ public class CityUpgradeRequestPacket {
     }
     
     /**
-     * 从玩家背包中扣除物品
-     */
-    private static void removeItems(net.minecraft.server.level.ServerPlayer player, com.xiaoliang.simukraft.world.CityUpgradeManager.Requirements requirements) {
-        if (requirements.wood() > 0) {
-            removeItems(player, net.minecraft.world.item.Items.OAK_LOG, requirements.wood());
-        }
-        if (requirements.cobblestone() > 0) {
-            removeItems(player, net.minecraft.world.item.Items.COBBLESTONE, requirements.cobblestone());
-        }
-        if (requirements.ironIngot() > 0) {
-            removeItems(player, net.minecraft.world.item.Items.IRON_INGOT, requirements.ironIngot());
-        }
-        if (requirements.goldIngot() > 0) {
-            removeItems(player, net.minecraft.world.item.Items.GOLD_INGOT, requirements.goldIngot());
-        }
-        if (requirements.diamond() > 0) {
-            removeItems(player, net.minecraft.world.item.Items.DIAMOND, requirements.diamond());
-        }
-        if (requirements.lapisLazuli() > 0) {
-            removeItems(player, net.minecraft.world.item.Items.LAPIS_LAZULI, requirements.lapisLazuli());
-        }
-    }
-    
-    /**
      * 计算玩家背包中指定物品的数量
      */
     private static int countItems(net.minecraft.server.level.ServerPlayer player, net.minecraft.world.item.Item item) {
@@ -216,20 +192,4 @@ public class CityUpgradeRequestPacket {
         return count;
     }
     
-    /**
-     * 从玩家背包中扣除指定数量的物品
-     */
-    private static void removeItems(net.minecraft.server.level.ServerPlayer player, net.minecraft.world.item.Item item, int amount) {
-        int toRemove = amount;
-        for (net.minecraft.world.item.ItemStack stack : player.getInventory().items) {
-            if (stack.getItem() == item && toRemove > 0) {
-                int removed = Math.min(toRemove, stack.getCount());
-                stack.shrink(removed);
-                toRemove -= removed;
-                if (toRemove == 0) {
-                    break;
-                }
-            }
-        }
-    }
 }

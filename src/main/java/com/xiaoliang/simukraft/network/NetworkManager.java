@@ -220,6 +220,12 @@ public class NetworkManager {
                 ShowToastPacket::encode,
                 ShowToastPacket::decode,
                 ShowToastPacket::handle);
+
+        INSTANCE.registerMessage(id++,
+                ShowCityNamePacket.class,
+                ShowCityNamePacket::encode,
+                ShowCityNamePacket::decode,
+                ShowCityNamePacket::handle);
         
         // 城市等级请求和响应数据包
         INSTANCE.registerMessage(id++,

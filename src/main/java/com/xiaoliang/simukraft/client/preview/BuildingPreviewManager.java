@@ -1,7 +1,9 @@
 package com.xiaoliang.simukraft.client.preview;
 
 import com.xiaoliang.simukraft.Simukraft;
+import com.xiaoliang.simukraft.client.ClientCityChunkData;
 import com.xiaoliang.simukraft.client.freecamera.FreeCameraManager;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
@@ -28,6 +30,9 @@ public class BuildingPreviewManager {
     private static BlockPos meshBuildOrigin = BlockPos.ZERO;
 
     public static void startPreview(String buildingName, String category, String fileName, BlockPos origin) {
+        if (!isOriginAllowed(origin)) {
+            return;
+        }
         currentBuildingName = buildingName;
         currentCategory = category;
         currentFileName = fileName;
@@ -83,8 +88,12 @@ public class BuildingPreviewManager {
         };
 
         // 先更新方块位置，再更新原点
+        BlockPos newOrigin = previewOrigin.offset(offset);
+        if (!isOriginAllowed(newOrigin)) {
+            return;
+        }
         updateBlockPositions(offset);
-        previewOrigin = previewOrigin.offset(offset);
+        previewOrigin = newOrigin;
         Simukraft.LOGGER.info(Component.translatable("message.preview.building.moved", previewOrigin).getString());
     }
 
@@ -92,8 +101,12 @@ public class BuildingPreviewManager {
         if (!isPreviewActive) return;
 
         BlockPos offsetPos = new BlockPos(0, offset, 0);
+        BlockPos newOrigin = previewOrigin.offset(offsetPos);
+        if (!isOriginAllowed(newOrigin)) {
+            return;
+        }
         updateBlockPositions(offsetPos);
-        previewOrigin = previewOrigin.offset(offsetPos);
+        previewOrigin = newOrigin;
         Simukraft.LOGGER.info(Component.translatable("message.preview.building.moved_vertical", previewOrigin).getString());
     }
 
@@ -134,9 +147,32 @@ public class BuildingPreviewManager {
         }
 
         BlockPos offset = new BlockPos(moveX, 0, moveZ);
+        BlockPos newOrigin = previewOrigin.offset(offset);
+        if (!isOriginAllowed(newOrigin)) {
+            return;
+        }
         updateBlockPositions(offset);
-        previewOrigin = previewOrigin.offset(offset);
+        previewOrigin = newOrigin;
         Simukraft.LOGGER.info(Component.translatable("message.preview.building.moved_camera", previewOrigin, yaw).getString());
+    }
+
+    private static boolean isOriginAllowed(BlockPos origin) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return true;
+        }
+        ClientCityChunkData data = ClientCityChunkData.getInstance();
+        java.util.UUID playerCityId = data.getCityId();
+        if (playerCityId == null) {
+            minecraft.player.displayClientMessage(Component.translatable("message.simukraft.city_placement.outside_city"), true);
+            return false;
+        }
+        java.util.UUID owner = data.getChunkOwner(new net.minecraft.world.level.ChunkPos(origin).toLong());
+        if (playerCityId.equals(owner)) {
+            return true;
+        }
+        minecraft.player.displayClientMessage(Component.translatable("message.simukraft.city_placement.outside_city"), true);
+        return false;
     }
 
     public static void rotatePreview() {

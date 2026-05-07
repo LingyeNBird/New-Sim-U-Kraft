@@ -253,6 +253,9 @@ public class CustomEntity extends PathfinderMob {
      */
     public boolean moveToWithNewPathfinder(BlockPos pos) {
         if (npcPathNavigator != null) {
+            if (!isPathTargetInsideCityTerritory(pos)) {
+                return false;
+            }
             if (ServerConfig.isDebugLogEnabled()) {
                 Simukraft.LOGGER.info("[CustomEntity] NPC {} 调用新寻路，当前位置: {}，目标位置: {}，目的: 通用路径请求", this.getFullName(), this.blockPosition(), pos);
             }
@@ -270,6 +273,9 @@ public class CustomEntity extends PathfinderMob {
      */
     public boolean moveToWithNewPathfinder(double x, double y, double z) {
         if (npcPathNavigator != null) {
+            if (!isPathTargetInsideCityTerritory(BlockPos.containing(x, y, z))) {
+                return false;
+            }
             if (ServerConfig.isDebugLogEnabled()) {
                 Simukraft.LOGGER.info("[CustomEntity] NPC {} 调用新寻路，当前位置: {}，目标位置: ({}, {}, {})，目的: 通用路径请求", this.getFullName(), this.blockPosition(), x, y, z);
             }
@@ -280,6 +286,9 @@ public class CustomEntity extends PathfinderMob {
 
     public boolean moveToWithNewPathfinder(BlockPos pos, double reachDistance) {
         if (npcPathNavigator != null) {
+            if (!isPathTargetInsideCityTerritory(pos)) {
+                return false;
+            }
             if (ServerConfig.isDebugLogEnabled()) {
                 Simukraft.LOGGER.info("[CustomEntity] NPC {} 调用新寻路，当前位置: {}，目标位置: {}，到达阈值: {}，目的: 通用路径请求", this.getFullName(), this.blockPosition(), pos, reachDistance);
             }
@@ -290,12 +299,26 @@ public class CustomEntity extends PathfinderMob {
 
     public boolean moveToWithNewPathfinder(double x, double y, double z, double reachDistance) {
         if (npcPathNavigator != null) {
+            if (!isPathTargetInsideCityTerritory(BlockPos.containing(x, y, z))) {
+                return false;
+            }
             if (ServerConfig.isDebugLogEnabled()) {
                 Simukraft.LOGGER.info("[CustomEntity] NPC {} 调用新寻路，当前位置: {}，目标位置: ({}, {}, {})，到达阈值: {}，目的: 通用路径请求", this.getFullName(), this.blockPosition(), x, y, z, reachDistance);
             }
             return npcPathNavigator.moveTo(x, y, z, reachDistance);
         }
         return false;
+    }
+
+    private boolean isPathTargetInsideCityTerritory(BlockPos pos) {
+        if (!(this.level() instanceof ServerLevel serverLevel)) {
+            return true;
+        }
+        UUID cityId = this.getCityId();
+        if (cityId == null) {
+            return true;
+        }
+        return com.xiaoliang.simukraft.world.CityTerritoryUtils.isPosInCityTerritory(serverLevel, cityId, pos);
     }
 
     public void stopAllMovement() {

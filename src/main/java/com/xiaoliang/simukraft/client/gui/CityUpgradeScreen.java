@@ -1,5 +1,6 @@
 package com.xiaoliang.simukraft.client.gui;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.logging.LogUtils;
 import com.xiaoliang.simukraft.client.ClientSimukraftData;
 import com.xiaoliang.simukraft.client.gui.components.UpgradeCanvas;
@@ -7,9 +8,11 @@ import com.xiaoliang.simukraft.world.CityUpgradeManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import org.slf4j.Logger;
@@ -19,357 +22,421 @@ import javax.annotation.Nullable;
 import java.util.Locale;
 import java.util.Objects;
 
-/**
- * 城市升级界面类
- */
-public class CityUpgradeScreen extends AbstractTransitionScreen {
+@SuppressWarnings("null")
+public class CityUpgradeScreen extends Screen {
     private static final Logger LOGGER = LogUtils.getLogger();
-    
+    private static final ResourceLocation UPGRADE_BG_TEXTURE = nn(ResourceLocation.fromNamespaceAndPath("simukraft", "textures/gui/updatabg.png"));
+    private static final ResourceLocation PANEL_BG_TEXTURE = nn(ResourceLocation.fromNamespaceAndPath("simukraft", "textures/gui/tan.png"));
+    private static final int SCALE_FIT_WIDTH = 720;
+    private static final int SCALE_FIT_HEIGHT = 420;
+    private static final int COLOR_TEXT = 0xFF4F3928;
+    private static final int COLOR_TEXT_MUTED = 0xFF7B6346;
+    private static final int COLOR_COMPLETE = 0xFF6D7C3E;
+    private static final int COLOR_AVAILABLE = 0xFF7E8F40;
+    private static final int COLOR_LOCKED = 0xFF9C6A55;
+    private static final int COLOR_WARN = 0xFF9A6B2C;
+    private static final int PANEL_MIN_WIDTH = 270;
+    private static final int PANEL_MAX_WIDTH = 330;
+    private static final int PANEL_CONTENT_LEFT = 44;
+    private static final int PANEL_CONTENT_RIGHT = 28;
+    private static final int PANEL_CONTENT_TOP = 18;
+    private static final int PANEL_CONTENT_BOTTOM = 74;
+    private static final int HEADER_HEIGHT = 48;
+    private static final int FOOTER_HEIGHT = 42;
+
     private final BlockPos cityCorePos;
     private UpgradeCanvas upgradeCanvas;
     private final int cityLevel;
     private Button submitButton;
     private Button cancelButton;
+    private Button backButton;
     @Nullable
     private Component feedbackMessage;
-    private int feedbackColor = 0xFFFFFF;
+    private int feedbackColor = COLOR_TEXT;
     private boolean pendingUpgradeRequest;
-    
-    // 右侧面板滑动动画相关变量
-    private int panelWidth; // 面板宽度
-    private int targetPanelX; // 目标位置（弹出或收回）
-    private int currentPanelX; // 当前位置
-    private final int animationSpeed = 15; // 动画速度
+    private int panelWidth;
+    private int targetPanelX;
+    private int currentPanelX;
+    private final int animationSpeed = 18;
 
-    /**
-     * 构造城市升级界面
-     * @param cityCorePos 城市核心位置
-     * @param cityLevel 城市等级
-     */
     public CityUpgradeScreen(BlockPos cityCorePos, int cityLevel) {
         super(Component.translatable("gui.city_upgrade.title"));
         this.cityCorePos = cityCorePos;
         this.cityLevel = cityLevel;
+        applyPreferredScale();
     }
 
     @Override
     protected void init() {
+        applyPreferredScale();
         super.init();
-        
-        int centerX = this.width / 2;
-        
-        // 创建返回按钮
-        this.addRenderableWidget(nn(Button.builder(
-            nn(Component.translatable("gui.city_upgrade.back")),
-            button -> this.closeScreen()
-        ).pos(centerX - 50, this.height - 40).size(100, 20).build()));
-        
-        // 初始化升级画布
-        int canvasWidth = this.width - 40;
-        int canvasHeight = this.height - 100;
-        this.upgradeCanvas = new UpgradeCanvas(20, 60, canvasWidth, canvasHeight, this, cityCorePos, cityLevel);
+        panelWidth = Math.max(PANEL_MIN_WIDTH, Math.min(PANEL_MAX_WIDTH, this.width / 3));
+        int canvasX = 18;
+        int canvasY = HEADER_HEIGHT + 12;
+        int canvasWidth = this.width - 36;
+        int canvasHeight = this.height - HEADER_HEIGHT - FOOTER_HEIGHT - 24;
+        this.upgradeCanvas = new UpgradeCanvas(canvasX, canvasY, canvasWidth, canvasHeight, this, cityCorePos, cityLevel);
         this.addRenderableWidget(upgradeCanvas);
-        
-        // 初始化面板宽度
-        panelWidth = this.width / 3;
-        
-        // 初始化面板位置（默认收回）
-        currentPanelX = this.width; // 初始位置：屏幕右侧外部
-        targetPanelX = this.width; // 目标位置：收回
-        
-        // 创建右侧面板的提交和取消按钮
-        int panelX = this.width - panelWidth;
-        int buttonWidth = panelWidth - 40;
-        
-        // 提交按钮
-        submitButton = nn(Button.builder(
-            nn(Component.translatable("gui.city_upgrade.submit")),
-            button -> this.handleSubmit()
-        ).pos(panelX + 20, this.height - 70).size(buttonWidth / 2, 20).build());
+        currentPanelX = this.width;
+        targetPanelX = this.width;
+        int actionWidth = Math.max(88, (panelWidth - 52) / 2);
+        submitButton = nn(Button.builder(nn(Component.translatable("gui.city_upgrade.submit")), button -> this.handleSubmit())
+                .pos(this.width + 20, this.height - 38).size(actionWidth, 22).build());
+        cancelButton = nn(Button.builder(nn(Component.translatable("gui.city_upgrade.cancel")), button -> this.handleCancel())
+                .pos(this.width + 30 + actionWidth, this.height - 38).size(actionWidth, 22).build());
+        backButton = nn(Button.builder(nn(Component.translatable("gui.city_upgrade.back")), button -> this.closeScreen())
+                .pos(18, this.height - 32).size(88, 22).build());
         this.addRenderableWidget(submitButton);
-        
-        // 取消按钮
-        cancelButton = nn(Button.builder(
-            nn(Component.translatable("gui.city_upgrade.cancel")),
-            button -> this.handleCancel()
-        ).pos(panelX + 20 + buttonWidth / 2 + 10, this.height - 70).size(buttonWidth / 2, 20).build());
         this.addRenderableWidget(cancelButton);
-        
-        // 默认隐藏按钮
-        nn(submitButton).visible = false;
-        nn(cancelButton).visible = false;
+        this.addRenderableWidget(backButton);
+        submitButton.visible = false;
+        cancelButton.visible = false;
+        applyButtonStyle(submitButton, false);
+        applyButtonStyle(cancelButton, false);
+        applyButtonStyle(backButton, false);
     }
 
     @Override
     public void render(@Nonnull GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTicks) {
-        // 绘制背景
-        super.render(guiGraphics, mouseX, mouseY, partialTicks);
-        
-        // 绘制标题
-        int centerX = this.width / 2;
-        guiGraphics.drawString(nn(this.font), nn(Component.translatable("gui.city_upgrade.title")), centerX - 50, 20, 0xFFFFFF);
-        
-        // 更新动画
+        renderScreenBackground(guiGraphics);
         updateAnimation();
-        
-        // 绘制右侧面板
-        renderRightPanel(guiGraphics, mouseX, mouseY);
-        
-        // 重新渲染按钮，确保它们在右侧面板之上
-        if (submitButton != null) {
+        super.renderBackground(guiGraphics);
+        super.render(guiGraphics, mouseX, mouseY, partialTicks);
+        renderHeader(guiGraphics);
+        renderFooter(guiGraphics);
+        renderRightPanel(guiGraphics);
+        renderButtonFrame(guiGraphics, backButton, false);
+        if (submitButton != null && submitButton.visible) {
+            renderButtonFrame(guiGraphics, submitButton, !submitButton.active);
             submitButton.render(guiGraphics, mouseX, mouseY, partialTicks);
         }
-        if (cancelButton != null) {
+        if (cancelButton != null && cancelButton.visible) {
+            renderButtonFrame(guiGraphics, cancelButton, false);
             cancelButton.render(guiGraphics, mouseX, mouseY, partialTicks);
         }
     }
-    
-    /**
-     * 更新面板滑动动画
-     */
-    private void updateAnimation() {
-        // 根据选中的标记更新目标位置
-        UpgradeCanvas.MapMarker selectedMarker = upgradeCanvas.getSelectedMarker();
-        if (selectedMarker != null) {
-            // 弹出面板
-            targetPanelX = this.width - panelWidth;
-        } else {
-            // 收回面板
-            targetPanelX = this.width;
+
+    private void renderScreenBackground(GuiGraphics guiGraphics) {
+        RenderSystem.setShaderTexture(0, UPGRADE_BG_TEXTURE);
+        guiGraphics.blit(UPGRADE_BG_TEXTURE, 0, 0, 0, 0, this.width, this.height, this.width, this.height);
+    }
+
+    private void applyButtonStyle(Button button, boolean disabled) {
+        button.setAlpha(disabled ? 0.55F : 1.0F);
+    }
+
+    private void renderButtonFrame(GuiGraphics guiGraphics, @Nullable Button button, boolean disabled) {
+        if (button == null || !button.visible) {
+            return;
         }
-        
-        // 动画逻辑
+    }
+
+    private void renderHeader(GuiGraphics guiGraphics) {
+        guiGraphics.drawString(nn(this.font), nn(Component.translatable("gui.city_upgrade.title")), 30, 24, 0xFFFFFFFF);
+        guiGraphics.drawString(nn(this.font), nn(Component.literal("Lv." + cityLevel)), this.width - 78, 24, COLOR_AVAILABLE);
+        renderLegend(guiGraphics, 150, 24);
+    }
+
+    private void renderFooter(GuiGraphics guiGraphics) {
+        if (feedbackMessage != null && upgradeCanvas.getSelectedMarker() == null) {
+            int x = 118;
+            int y = this.height - 31;
+            for (FormattedCharSequence line : this.font.split(nn(feedbackMessage), this.width - 150)) {
+                guiGraphics.drawString(nn(this.font), nn(line), x, y, feedbackColor);
+                y += this.font.lineHeight + 1;
+                if (y > this.height - 16) {
+                    break;
+                }
+            }
+        }
+    }
+
+    private void renderLegend(GuiGraphics guiGraphics, int x, int y) {
+        drawLegendItem(guiGraphics, x, y, COLOR_COMPLETE, Component.translatable("gui.city_upgrade.status_completed"));
+        drawLegendItem(guiGraphics, x + 82, y, COLOR_AVAILABLE, Component.translatable("gui.city_upgrade.status_available"));
+        drawLegendItem(guiGraphics, x + 164, y, COLOR_LOCKED, Component.translatable("gui.city_upgrade.status_locked"));
+    }
+
+    private void drawLegendItem(GuiGraphics guiGraphics, int x, int y, int color, Component text) {
+        guiGraphics.fill(x, y + 3, x + 7, y + 10, color);
+        guiGraphics.drawString(nn(this.font), nn(text), x + 11, y + 2, COLOR_TEXT_MUTED);
+    }
+
+    private void updateAnimation() {
+        UpgradeCanvas.MapMarker selectedMarker = upgradeCanvas.getSelectedMarker();
+        targetPanelX = selectedMarker != null ? this.width - panelWidth - 18 : this.width;
         if (currentPanelX != targetPanelX) {
             if (currentPanelX < targetPanelX) {
-                // 向右移动（收回）
-                currentPanelX += animationSpeed;
-                if (currentPanelX > targetPanelX) {
-                    currentPanelX = targetPanelX;
-                }
+                currentPanelX = Math.min(targetPanelX, currentPanelX + animationSpeed);
             } else {
-                // 向左移动（弹出）
-                currentPanelX -= animationSpeed;
-                if (currentPanelX < targetPanelX) {
-                    currentPanelX = targetPanelX;
-                }
+                currentPanelX = Math.max(targetPanelX, currentPanelX - animationSpeed);
             }
         }
-        
-        // 更新按钮位置和可见性
         updateButtons();
     }
-    
-    /**
-     * 更新按钮位置和可见性
-     */
+
     private void updateButtons() {
         UpgradeCanvas.MapMarker selectedMarker = upgradeCanvas.getSelectedMarker();
-        boolean isVisible = selectedMarker != null && currentPanelX <= this.width - panelWidth + 10;
-        
-        boolean isUpgradeable = false;
-        if (selectedMarker != null) {
-            // 从标记中获取升级等级
-            String hoverText = selectedMarker.getHoverText();
-            int upgradeLevel = 0;
-            if (!hoverText.isEmpty()) {
-                try {
-                    upgradeLevel = Integer.parseInt(hoverText.substring(0, hoverText.indexOf(":")));
-                    // 检查是否是可升级的节点（即升级等级等于当前城市等级+1）
-                    isUpgradeable = upgradeLevel == cityLevel + 1;
-                } catch (Exception e) {
-                    upgradeLevel = 0;
-                }
-            }
-        }
-        
-        // 始终显示提交按钮，但根据节点状态禁用或启用
+        boolean isVisible = selectedMarker != null && currentPanelX <= targetPanelX + 8;
+        boolean isUpgradeable = selectedMarker != null && parseUpgradeLevel(selectedMarker) == cityLevel + 1;
+        int actionWidth = Math.max(88, (panelWidth - 52) / 2);
+        int buttonY = this.height - 38;
         submitButton.visible = isVisible;
         cancelButton.visible = isVisible;
         submitButton.active = isUpgradeable && !pendingUpgradeRequest;
         cancelButton.active = !pendingUpgradeRequest;
-        
-        // 更新按钮位置
-        int buttonX = currentPanelX + 20;
-        int buttonWidth = panelWidth - 40;
-        submitButton.setPosition(buttonX, this.height - 70);
-        cancelButton.setPosition(buttonX + buttonWidth / 2 + 10, this.height - 70);
+        applyButtonStyle(submitButton, !submitButton.active);
+        applyButtonStyle(cancelButton, !cancelButton.active);
+        submitButton.setPosition(currentPanelX + 20, buttonY);
+        cancelButton.setPosition(currentPanelX + 30 + actionWidth, buttonY);
     }
-    
-    /**
-     * 绘制右侧面板
-     */
-    private void renderRightPanel(GuiGraphics guiGraphics, int mouseX, int mouseY) {
-        // 面板位置和大小
-        int panelY = 0;
-        int panelHeight = this.height;
-        
-        // 绘制半透明灰色背景
-        guiGraphics.fill(currentPanelX, panelY, currentPanelX + panelWidth, panelY + panelHeight, 0x80333333);
-        
-        // 获取选中的标记
-        UpgradeCanvas.MapMarker selectedMarker = upgradeCanvas.getSelectedMarker();
-        
-        if (selectedMarker != null) {
-            // 绘制面板标题
-            guiGraphics.drawString(nn(this.font), nn(Component.translatable("gui.city_upgrade.panel_title")), currentPanelX + 10, panelY + 10, 0xFFFFFF);
-            
-            // 从标记中获取升级等级（通过解析hoverText）
-            String hoverText = selectedMarker.getHoverText();
-            int upgradeLevel = 0;
-            String upgradeName = "";
-            if (!hoverText.isEmpty()) {
-                try {
-                    upgradeLevel = Integer.parseInt(hoverText.substring(0, hoverText.indexOf(":")));
-                    upgradeName = hoverText.substring(hoverText.indexOf(":") + 1);
-                } catch (Exception e) {
-                    upgradeLevel = 0;
-                    upgradeName = hoverText;
-                }
-            }
-            
-            // 获取升级配置
-            CityUpgradeManager upgradeManager = CityUpgradeManager.getInstance();
-            CityUpgradeManager.CityUpgrade upgrade = upgradeManager.getUpgrade(upgradeLevel);
-            CityUpgradeManager.Requirements requirements = upgrade != null ? upgrade.requirements() : null;
-            
-            // 绘制标记信息（只显示等级和名称）
-            int yOffset = 30;
-            guiGraphics.drawString(nn(this.font), nn(Component.literal(upgradeLevel + "." + upgradeName)), currentPanelX + 10, panelY + yOffset, 0xFFFFFF);
-            yOffset += this.font.lineHeight + 5;
-            
-            // 绘制升级描述
-            if (upgrade != null && !upgrade.description().isEmpty()) {
-                guiGraphics.drawString(nn(this.font), nn(Component.literal(safeString(upgrade.description()))), currentPanelX + 10, panelY + yOffset, 0xFFFFFF);
-                yOffset += this.font.lineHeight + 10;
-            }
-            
-            // 绘制要求
-            guiGraphics.drawString(nn(this.font), nn(Component.translatable("gui.city_upgrade.requirements")), currentPanelX + 10, panelY + yOffset, 0xFFFFFF);
-            yOffset += this.font.lineHeight + 5;
-            
-            // 根据升级要求绘制物品图标
-            if (requirements != null) {
-                // 获取玩家背包
-                net.minecraft.world.entity.player.Player player = Minecraft.getInstance().player;
-                
-                // 从玩家背包中获取物品数量
-                int currentWood = countItemsInInventory(player, Items.OAK_LOG);
-                int currentCobblestone = countItemsInInventory(player, Items.COBBLESTONE);
-                int currentIron = countItemsInInventory(player, Items.IRON_INGOT);
-                int currentGold = countItemsInInventory(player, Items.GOLD_INGOT);
-                int currentLapis = countItemsInInventory(player, Items.LAPIS_LAZULI);
-                
-                // 绘制人口要求
-                int currentPopulation = ClientSimukraftData.getCurrentCityPopulation();
-                int currentDiamond = countItemsInInventory(player, Items.DIAMOND);
-                if (requirements.population() > 0) {
-                    boolean hasEnough = currentPopulation >= requirements.population();
-                    int textColor = hasEnough ? 0xFF00FF00 : 0xFFFF0000; // 满足为绿色，不满足为红色
-                    guiGraphics.drawString(nn(this.font), nn(Component.translatable("gui.city_upgrade.requirement_population", currentPopulation, requirements.population())), currentPanelX + 20, panelY + yOffset, textColor);
-                    yOffset += this.font.lineHeight + 5;
-                }
-                
-                // 绘制木头
-                if (requirements.wood() > 0) {
-                    boolean hasEnough = currentWood >= requirements.wood();
-                    int textColor = hasEnough ? 0xFF00FF00 : 0xFFFF0000;
-                    
-                    ItemStack woodStack = new ItemStack(nn(Items.OAK_LOG), requirements.wood());
-                    drawItemStack(guiGraphics, woodStack, currentPanelX + 20, panelY + yOffset - 4);
-                    guiGraphics.drawString(nn(this.font), nn(Component.literal(currentWood + " / " + requirements.wood())), currentPanelX + 40, panelY + yOffset, textColor);
-                    yOffset += this.font.lineHeight + 8;
-                }
-                
-                // 绘制圆石
-                if (requirements.cobblestone() > 0) {
-                    boolean hasEnough = currentCobblestone >= requirements.cobblestone();
-                    int textColor = hasEnough ? 0xFF00FF00 : 0xFFFF0000;
-                    
-                    ItemStack cobblestoneStack = new ItemStack(nn(Items.COBBLESTONE), requirements.cobblestone());
-                    drawItemStack(guiGraphics, cobblestoneStack, currentPanelX + 20, panelY + yOffset - 4);
-                    guiGraphics.drawString(nn(this.font), nn(Component.literal(currentCobblestone + " / " + requirements.cobblestone())), currentPanelX + 40, panelY + yOffset, textColor);
-                    yOffset += this.font.lineHeight + 8;
-                }
-                
-                // 绘制铁锭
-                if (requirements.ironIngot() > 0) {
-                    boolean hasEnough = currentIron >= requirements.ironIngot();
-                    int textColor = hasEnough ? 0xFF00FF00 : 0xFFFF0000;
-                    
-                    ItemStack ironStack = new ItemStack(nn(Items.IRON_INGOT), requirements.ironIngot());
-                    drawItemStack(guiGraphics, ironStack, currentPanelX + 20, panelY + yOffset - 4);
-                    guiGraphics.drawString(nn(this.font), nn(Component.literal(currentIron + " / " + requirements.ironIngot())), currentPanelX + 40, panelY + yOffset, textColor);
-                    yOffset += this.font.lineHeight + 8;
-                }
-                
-                // 绘制金锭
-                if (requirements.goldIngot() > 0) {
-                    boolean hasEnough = currentGold >= requirements.goldIngot();
-                    int textColor = hasEnough ? 0xFF00FF00 : 0xFFFF0000;
-                    
-                    ItemStack goldStack = new ItemStack(nn(Items.GOLD_INGOT), requirements.goldIngot());
-                    drawItemStack(guiGraphics, goldStack, currentPanelX + 20, panelY + yOffset - 4);
-                    guiGraphics.drawString(nn(this.font), nn(Component.literal(currentGold + " / " + requirements.goldIngot())), currentPanelX + 40, panelY + yOffset, textColor);
-                    yOffset += this.font.lineHeight + 8;
-                }
-                
-                // 绘制钻石
-                if (requirements.diamond() > 0) {
-                    boolean hasEnough = currentDiamond >= requirements.diamond();
-                    int textColor = hasEnough ? 0xFF00FF00 : 0xFFFF0000;
-                    
-                    ItemStack diamondStack = new ItemStack(nn(Items.DIAMOND), requirements.diamond());
-                    drawItemStack(guiGraphics, diamondStack, currentPanelX + 20, panelY + yOffset - 4);
-                    guiGraphics.drawString(nn(this.font), nn(Component.literal(currentDiamond + " / " + requirements.diamond())), currentPanelX + 40, panelY + yOffset, textColor);
-                    yOffset += this.font.lineHeight + 8;
-                }
-                
-                // 绘制青金石
-                if (requirements.lapisLazuli() > 0) {
-                    boolean hasEnough = currentLapis >= requirements.lapisLazuli();
-                    int textColor = hasEnough ? 0xFF00FF00 : 0xFFFF0000;
-                    
-                    ItemStack lapisStack = new ItemStack(nn(Items.LAPIS_LAZULI), requirements.lapisLazuli());
-                    drawItemStack(guiGraphics, lapisStack, currentPanelX + 20, panelY + yOffset - 4);
-                    guiGraphics.drawString(nn(this.font), nn(Component.literal(currentLapis + " / " + requirements.lapisLazuli())), currentPanelX + 40, panelY + yOffset, textColor);
-                    yOffset += this.font.lineHeight + 8;
-                }
-                
-                // 绘制资金要求
-                double currentFunds = ClientSimukraftData.getCurrentCityFunds();
-                if (requirements.funds() > 0.0) {
-                    boolean hasEnough = currentFunds >= requirements.funds();
-                    int textColor = hasEnough ? 0xFF00FF00 : 0xFFFF0000;
-                    guiGraphics.drawString(nn(this.font), nn(Component.translatable("gui.city_upgrade.requirement_funds", safeString(String.format(Locale.US, "%.2f", currentFunds)), requirements.funds())), currentPanelX + 20, panelY + yOffset, textColor);
-                    yOffset += this.font.lineHeight + 10;
-                }
-            }
-            
-            // 绘制解锁功能
-            if (upgrade != null && !upgrade.unlocks().isEmpty()) {
-                guiGraphics.drawString(nn(this.font), nn(Component.translatable("gui.city_upgrade.unlocks")), currentPanelX + 10, panelY + yOffset, 0xFFFFFF);
-                yOffset += this.font.lineHeight + 5;
-                guiGraphics.drawString(nn(this.font), nn(Component.literal(safeString(upgrade.unlocks()))), currentPanelX + 20, panelY + yOffset, 0xFFFFFF);
-                yOffset += this.font.lineHeight + 10;
-            }
 
-            if (feedbackMessage != null) {
-                int availableWidth = panelWidth - 20;
-                int feedbackY = this.height - 110;
-                for (FormattedCharSequence line : this.font.split(nn(feedbackMessage), availableWidth)) {
-                    guiGraphics.drawString(nn(this.font), nn(line), currentPanelX + 10, feedbackY, feedbackColor);
-                    feedbackY += this.font.lineHeight + 2;
-                    if (feedbackY >= this.height - 78) {
-                        break;
-                    }
-                }
+    private void renderRightPanel(GuiGraphics guiGraphics) {
+        UpgradeCanvas.MapMarker selectedMarker = upgradeCanvas.getSelectedMarker();
+        if (selectedMarker == null && currentPanelX >= this.width) {
+            return;
+        }
+        int panelY = 16;
+        int panelBottom = this.height - 16;
+        renderPanelTexture(guiGraphics, currentPanelX, panelY, panelWidth, panelBottom - panelY);
+        if (selectedMarker == null) {
+            return;
+        }
+        int contentLeft = currentPanelX + PANEL_CONTENT_LEFT;
+        int contentRight = currentPanelX + panelWidth - PANEL_CONTENT_RIGHT;
+        int contentTop = panelY + PANEL_CONTENT_TOP;
+        int contentBottom = panelBottom - PANEL_CONTENT_BOTTOM;
+        int upgradeLevel = parseUpgradeLevel(selectedMarker);
+        CityUpgradeManager.CityUpgrade upgrade = CityUpgradeManager.getInstance().getUpgrade(upgradeLevel);
+        int y = contentTop;
+        y = renderPanelTitle(guiGraphics, upgradeLevel, upgrade, contentLeft, contentRight, y);
+        y = renderStatusCard(guiGraphics, upgradeLevel, contentLeft, contentRight, y);
+        y = renderDescriptionCard(guiGraphics, upgrade, contentLeft, contentRight, y, contentBottom);
+        y = renderRequirementsCard(guiGraphics, upgrade, contentLeft, contentRight, y, contentBottom);
+        y = renderUnlockCard(guiGraphics, upgrade, contentLeft, contentRight, y, contentBottom);
+        renderFeedback(guiGraphics, contentLeft, contentRight, y, panelBottom - 60);
+    }
+
+    private int renderPanelTitle(GuiGraphics guiGraphics, int upgradeLevel, @Nullable CityUpgradeManager.CityUpgrade upgrade, int contentLeft, int contentRight, int y) {
+        int titleColor = getLevelColor(upgradeLevel);
+        guiGraphics.drawString(nn(this.font), nn(Component.literal("Lv." + upgradeLevel)), contentLeft, y, titleColor);
+        String name = upgrade != null ? upgrade.name() : getUpgradeNameFromMarker();
+        int levelTextWidth = this.font.width(nn(Component.literal("Lv." + upgradeLevel)));
+        guiGraphics.drawString(nn(this.font), nn(Component.literal(safeString(name))), Math.min(contentLeft + levelTextWidth + 16, contentRight - 40), y, 0xFFFFFFFF);
+        return y + 20;
+    }
+
+    private int renderStatusCard(GuiGraphics guiGraphics, int upgradeLevel, int contentLeft, int contentRight, int y) {
+        int x = contentLeft;
+        int width = Math.max(1, contentRight - contentLeft);
+        drawCard(guiGraphics, x, y, width, 30);
+        Component status = getStatusText(upgradeLevel);
+        int color = getLevelColor(upgradeLevel);
+        guiGraphics.drawString(nn(this.font), nn(status), x + 10, y + 10, color);
+        return y + 38;
+    }
+
+    private int renderDescriptionCard(GuiGraphics guiGraphics, @Nullable CityUpgradeManager.CityUpgrade upgrade, int contentLeft, int contentRight, int y, int contentBottom) {
+        if (upgrade == null || upgrade.description().isEmpty()) {
+            return y;
+        }
+        int x = contentLeft;
+        int width = Math.max(1, contentRight - contentLeft);
+        int textWidth = width - 20;
+        int lineCount = Math.min(4, this.font.split(nn(Component.literal(safeString(upgrade.description()))), textWidth).size());
+        int height = 22 + lineCount * (this.font.lineHeight + 2);
+        if (y + height > contentBottom) {
+            return contentBottom;
+        }
+        drawCard(guiGraphics, x, y, width, height);
+        guiGraphics.drawString(nn(this.font), nn(Component.literal("城市阶段")), x + 10, y + 8, COLOR_WARN);
+        drawWrapped(guiGraphics, Component.literal(safeString(upgrade.description())), x + 10, y + 22, textWidth, COLOR_TEXT, y + height - 6);
+        return y + height + 8;
+    }
+
+    private int renderRequirementsCard(GuiGraphics guiGraphics, @Nullable CityUpgradeManager.CityUpgrade upgrade, int contentLeft, int contentRight, int y, int contentBottom) {
+        if (upgrade == null) {
+            return y;
+        }
+        CityUpgradeManager.Requirements requirements = upgrade.requirements();
+        int x = contentLeft;
+        int width = Math.max(1, contentRight - contentLeft);
+        int height = calculateRequirementsHeight(requirements);
+        if (y + height > contentBottom) {
+            height = Math.max(34, contentBottom - y);
+        }
+        if (height <= 34) {
+            return contentBottom;
+        }
+        drawCard(guiGraphics, x, y, width, height);
+        guiGraphics.drawString(nn(this.font), nn(Component.translatable("gui.city_upgrade.requirements")), x + 10, y + 8, COLOR_WARN);
+        int rowY = y + 24;
+        net.minecraft.world.entity.player.Player player = Minecraft.getInstance().player;
+        if (requirements.population() > 0) {
+            int current = ClientSimukraftData.getCurrentCityPopulation();
+            rowY = drawRequirementText(guiGraphics, Component.translatable("gui.city_upgrade.requirement_population", current, requirements.population()), current >= requirements.population(), x + 14, rowY);
+        }
+        rowY = drawRequirementItem(guiGraphics, new ItemStack(nn(Items.OAK_LOG)), countItemsInInventory(player, Items.OAK_LOG), requirements.wood(), x + 14, rowY);
+        rowY = drawRequirementItem(guiGraphics, new ItemStack(nn(Items.COBBLESTONE)), countItemsInInventory(player, Items.COBBLESTONE), requirements.cobblestone(), x + 14, rowY);
+        rowY = drawRequirementItem(guiGraphics, new ItemStack(nn(Items.IRON_INGOT)), countItemsInInventory(player, Items.IRON_INGOT), requirements.ironIngot(), x + 14, rowY);
+        rowY = drawRequirementItem(guiGraphics, new ItemStack(nn(Items.GOLD_INGOT)), countItemsInInventory(player, Items.GOLD_INGOT), requirements.goldIngot(), x + 14, rowY);
+        rowY = drawRequirementItem(guiGraphics, new ItemStack(nn(Items.DIAMOND)), countItemsInInventory(player, Items.DIAMOND), requirements.diamond(), x + 14, rowY);
+        rowY = drawRequirementItem(guiGraphics, new ItemStack(nn(Items.LAPIS_LAZULI)), countItemsInInventory(player, Items.LAPIS_LAZULI), requirements.lapisLazuli(), x + 14, rowY);
+        if (requirements.funds() > 0.0) {
+            double currentFunds = ClientSimukraftData.getCurrentCityFunds();
+            Component text = Component.translatable("gui.city_upgrade.requirement_funds", safeString(String.format(Locale.US, "%.2f", currentFunds)), requirements.funds());
+            drawRequirementText(guiGraphics, text, currentFunds >= requirements.funds(), x + 14, rowY);
+        }
+        return Math.min(contentBottom, y + height + 8);
+    }
+
+    private int renderUnlockCard(GuiGraphics guiGraphics, @Nullable CityUpgradeManager.CityUpgrade upgrade, int contentLeft, int contentRight, int y, int contentBottom) {
+        if (upgrade == null) {
+            return y;
+        }
+        String unlockText = formatUnlockText(upgrade);
+        if (unlockText.isEmpty()) {
+            return y;
+        }
+        int x = contentLeft;
+        int width = Math.max(1, contentRight - contentLeft);
+        int textWidth = width - 20;
+        int lineCount = Math.min(6, this.font.split(nn(Component.literal(unlockText)), textWidth).size());
+        int height = 26 + lineCount * (this.font.lineHeight + 3);
+        if (y + height > contentBottom) {
+            height = Math.max(26, contentBottom - y);
+        }
+        if (height <= 26) {
+            return contentBottom;
+        }
+        drawCard(guiGraphics, x, y, width, height);
+        guiGraphics.drawString(nn(this.font), nn(Component.translatable("gui.city_upgrade.unlocks")), x + 10, y + 8, COLOR_WARN);
+        drawWrapped(guiGraphics, Component.literal(unlockText), x + 10, y + 24, textWidth, COLOR_TEXT, y + height - 6);
+        return Math.min(contentBottom, y + height + 8);
+    }
+
+    private String formatUnlockText(CityUpgradeManager.CityUpgrade upgrade) {
+        int level = upgrade.level();
+        if (level == 0) {
+            return "创建城市，获得初始 9 个区块";
+        }
+        if (level == 1) {
+            return "解锁城市升级功能";
+        }
+        if (level >= 2 && level <= 10) {
+            int maxChunks = (2 * level + 1) * (2 * level + 1);
+            int prevMaxChunks = level == 2 ? 9 : (2 * (level - 1) + 1) * (2 * (level - 1) + 1);
+            int newChunks = maxChunks - prevMaxChunks;
+            return String.format("• 可拥有区块: %d → %d (+%d)", prevMaxChunks, maxChunks, newChunks);
+        }
+        if (level == 11) {
+            return "• 可拥有区块: 无限制";
+        }
+        return "";
+    }
+
+    private void renderFeedback(GuiGraphics guiGraphics, int contentLeft, int contentRight, int y, int feedbackTopLimit) {
+        if (feedbackMessage == null) {
+            return;
+        }
+        int x = contentLeft;
+        int width = Math.max(1, contentRight - contentLeft);
+        int top = Math.min(Math.max(y, feedbackTopLimit), feedbackTopLimit);
+        drawCard(guiGraphics, x, top, width, 42);
+        drawWrapped(guiGraphics, feedbackMessage, x + 10, top + 10, width - 20, feedbackColor, top + 35);
+    }
+
+    private int calculateRequirementsHeight(CityUpgradeManager.Requirements requirements) {
+        int rows = 0;
+        if (requirements.population() > 0) rows++;
+        if (requirements.wood() > 0) rows++;
+        if (requirements.cobblestone() > 0) rows++;
+        if (requirements.ironIngot() > 0) rows++;
+        if (requirements.goldIngot() > 0) rows++;
+        if (requirements.diamond() > 0) rows++;
+        if (requirements.lapisLazuli() > 0) rows++;
+        if (requirements.funds() > 0.0) rows++;
+        return 34 + rows * 22;
+    }
+
+    private int drawRequirementText(GuiGraphics guiGraphics, Component text, boolean pass, int x, int y) {
+        guiGraphics.fill(x, y + 3, x + 7, y + 10, pass ? COLOR_AVAILABLE : COLOR_LOCKED);
+        guiGraphics.drawString(nn(this.font), nn(text), x + 16, y + 2, pass ? COLOR_AVAILABLE : COLOR_LOCKED);
+        return y + 22;
+    }
+
+    private int drawRequirementItem(GuiGraphics guiGraphics, ItemStack itemStack, int current, int required, int x, int y) {
+        if (required <= 0) {
+            return y;
+        }
+        boolean pass = current >= required;
+        guiGraphics.renderItem(nn(itemStack), x, y - 2);
+        guiGraphics.drawString(nn(this.font), nn(Component.literal(current + " / " + required)), x + 24, y + 2, pass ? COLOR_AVAILABLE : COLOR_LOCKED);
+        return y + 22;
+    }
+
+    private void drawCard(GuiGraphics guiGraphics, int x, int y, int width, int height) {
+    }
+
+    private void renderPanelTexture(GuiGraphics guiGraphics, int x, int y, int width, int height) {
+        RenderSystem.enableBlend();
+        RenderSystem.setShaderTexture(0, PANEL_BG_TEXTURE);
+        guiGraphics.blit(PANEL_BG_TEXTURE, x, y, 0, 0, width, height, width, height);
+        RenderSystem.disableBlend();
+    }
+
+    private void drawWrapped(GuiGraphics guiGraphics, Component text, int x, int y, int width, int color, int maxY) {
+        for (FormattedCharSequence line : this.font.split(nn(text), width)) {
+            if (y > maxY) {
+                break;
             }
+            guiGraphics.drawString(nn(this.font), nn(line), x, y, color);
+            y += this.font.lineHeight + 2;
         }
     }
-    
-    /**
-     * 计算玩家背包中指定物品的数量
-     */
+
+    private Component getStatusText(int upgradeLevel) {
+        if (upgradeLevel <= cityLevel) {
+            return Component.translatable("gui.city_upgrade.status_completed");
+        }
+        if (upgradeLevel == cityLevel + 1) {
+            return Component.translatable("gui.city_upgrade.status_available");
+        }
+        return Component.translatable("gui.city_upgrade.status_locked");
+    }
+
+    private int getLevelColor(int upgradeLevel) {
+        if (upgradeLevel <= cityLevel) {
+            return COLOR_COMPLETE;
+        }
+        if (upgradeLevel == cityLevel + 1) {
+            return COLOR_AVAILABLE;
+        }
+        return COLOR_LOCKED;
+    }
+
+    private int parseUpgradeLevel(UpgradeCanvas.MapMarker marker) {
+        String hoverText = marker.getHoverText();
+        if (!hoverText.isEmpty()) {
+            try {
+                return Integer.parseInt(hoverText.substring(0, hoverText.indexOf(":")));
+            } catch (Exception e) {
+                LOGGER.error("解析升级等级失败", e);
+            }
+        }
+        return 0;
+    }
+
+    private String getUpgradeNameFromMarker() {
+        UpgradeCanvas.MapMarker selectedMarker = upgradeCanvas.getSelectedMarker();
+        if (selectedMarker == null) {
+            return "";
+        }
+        String hoverText = selectedMarker.getHoverText();
+        int index = hoverText.indexOf(":");
+        return index >= 0 ? hoverText.substring(index + 1) : hoverText;
+    }
+
     private int countItemsInInventory(net.minecraft.world.entity.player.Player player, net.minecraft.world.item.Item item) {
         if (player == null) return 0;
         int count = 0;
@@ -380,72 +447,37 @@ public class CityUpgradeScreen extends AbstractTransitionScreen {
         }
         return count;
     }
-    
-    /**
-     * 绘制物品图标
-     */
-    private void drawItemStack(GuiGraphics guiGraphics, ItemStack itemStack, int x, int y) {
-        guiGraphics.renderItem(nn(itemStack), x, y);
-        guiGraphics.renderItemDecorations(nn(this.font), nn(itemStack), x, y);
-    }
-    
-    /**
-     * 处理提交按钮点击
-     */
+
     private void handleSubmit() {
-        // 实际实现中需要发送网络包到服务器，处理升级请求
         UpgradeCanvas.MapMarker selectedMarker = upgradeCanvas.getSelectedMarker();
-        if (selectedMarker != null) {
-            LOGGER.debug("选中的升级标记: {}", selectedMarker.getHoverText());
-            
-            // 从标记中获取升级等级
-            String hoverText = selectedMarker.getHoverText();
-            int upgradeLevel = 0;
-            if (!hoverText.isEmpty()) {
-                try {
-                    upgradeLevel = Integer.parseInt(hoverText.substring(0, hoverText.indexOf(":")));
-                    LOGGER.debug("解析得到的升级等级: {}", upgradeLevel);
-                } catch (Exception e) {
-                    LOGGER.error("解析升级等级失败", e);
-                    upgradeLevel = 0;
-                }
-            }
-            
-            // 发送升级请求到服务器
-            if (upgradeLevel > 0) {
-                LOGGER.debug("发送升级请求，城市核心位置: {}, 升级等级: {}", cityCorePos, upgradeLevel);
-                pendingUpgradeRequest = true;
-                feedbackMessage = Component.translatable("gui.city_upgrade.pending");
-                feedbackColor = 0xFFE6B800;
-                com.xiaoliang.simukraft.network.CityUpgradeRequestPacket packet = new com.xiaoliang.simukraft.network.CityUpgradeRequestPacket(cityCorePos, upgradeLevel);
-                com.xiaoliang.simukraft.network.NetworkManager.INSTANCE.sendToServer(packet);
-            } else {
-                LOGGER.warn("无效的升级等级: {}", upgradeLevel);
-                feedbackMessage = Component.translatable("message.simukraft.city_upgrade.invalid_target");
-                feedbackColor = 0xFFFF5555;
-            }
-        } else {
-            LOGGER.warn("未选中任何标记");
+        if (selectedMarker == null) {
             feedbackMessage = Component.translatable("message.simukraft.city_upgrade.invalid_target");
-            feedbackColor = 0xFFFF5555;
+            feedbackColor = COLOR_LOCKED;
+            return;
         }
+        int upgradeLevel = parseUpgradeLevel(selectedMarker);
+        if (upgradeLevel != cityLevel + 1) {
+            feedbackMessage = Component.translatable("message.simukraft.city_upgrade.invalid_target");
+            feedbackColor = COLOR_LOCKED;
+            return;
+        }
+        pendingUpgradeRequest = true;
+        feedbackMessage = Component.translatable("gui.city_upgrade.pending");
+        feedbackColor = COLOR_WARN;
+        com.xiaoliang.simukraft.network.CityUpgradeRequestPacket packet = new com.xiaoliang.simukraft.network.CityUpgradeRequestPacket(cityCorePos, upgradeLevel);
+        com.xiaoliang.simukraft.network.NetworkManager.INSTANCE.sendToServer(packet);
     }
-    
-    /**
-     * 处理取消按钮点击
-     */
+
     private void handleCancel() {
-        // 取消选择
         pendingUpgradeRequest = false;
         feedbackMessage = null;
         upgradeCanvas.setSelectedMarker(null);
-        LOGGER.debug("已取消城市升级节点选择");
     }
 
     public void handleUpgradeResult(boolean success, Component message) {
         pendingUpgradeRequest = false;
         feedbackMessage = message;
-        feedbackColor = success ? 0xFF55FF55 : 0xFFFF5555;
+        feedbackColor = success ? COLOR_AVAILABLE : COLOR_LOCKED;
         if (success) {
             closeScreen();
         }
@@ -456,24 +488,38 @@ public class CityUpgradeScreen extends AbstractTransitionScreen {
         this.closeScreen();
     }
 
-    /**
-     * 关闭当前屏幕，返回城市管理界面
-     */
     private void closeScreen() {
+        GuiScaleManager.forceRestore();
         if (this.minecraft != null) {
             this.minecraft.setScreen(new CityManagementScreen(cityCorePos));
         }
+    }
+
+    private void applyPreferredScale() {
+        GuiScaleManager.applyBestFitScale(4, SCALE_FIT_WIDTH, SCALE_FIT_HEIGHT, 12);
+    }
+
+    @Override
+    public void resize(@Nonnull Minecraft minecraft, int width, int height) {
+        applyPreferredScale();
+        super.resize(minecraft, width, height);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (GuiScaleManager.handleEscKey(keyCode, this::onClose)) {
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
     public boolean isPauseScreen() {
         return false;
     }
-    
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        // 直接调用父类的mouseClicked方法，让所有组件都有机会处理点击事件
-        // 包括右侧面板内的按钮
         return super.mouseClicked(mouseX, mouseY, button);
     }
 

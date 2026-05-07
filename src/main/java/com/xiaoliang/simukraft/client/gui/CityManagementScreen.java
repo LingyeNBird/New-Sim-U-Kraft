@@ -17,6 +17,7 @@ import com.xiaoliang.simukraft.client.gui.map.CityMapCanvas;
 import com.xiaoliang.simukraft.client.map.SimuMapManager;
 import com.xiaoliang.simukraft.init.ModSoundEvents;
 import com.xiaoliang.simukraft.network.GetCityInfoPacket;
+import com.xiaoliang.simukraft.network.GetCityLevelPacket;
 import com.xiaoliang.simukraft.network.NetworkManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -81,8 +82,8 @@ public class CityManagementScreen extends ModularUIGuiContainer {
 
         rootGroup.addWidget(createButton(leftX, startY + 2 * (BUTTON_HEIGHT + BUTTON_SPACING), BUTTON_WIDTH, BUTTON_HEIGHT,
                 "gui.city_management.upgrade",
-                false,
-                clickData -> openCityUpgrade()));
+                true,
+                clickData -> openCityUpgrade(cityCorePos)));
 
         rootGroup.addWidget(createButton(leftX, startY + 3 * (BUTTON_HEIGHT + BUTTON_SPACING), BUTTON_WIDTH, BUTTON_HEIGHT,
                 "gui.city_management.citizens",
@@ -168,7 +169,9 @@ public class CityManagementScreen extends ModularUIGuiContainer {
         Minecraft.getInstance().setScreen(new CityEditScreen(cityCorePos));
     }
 
-    private static void openCityUpgrade() {
+    private static void openCityUpgrade(BlockPos cityCorePos) {
+        GetCityLevelPacket packet = new GetCityLevelPacket(cityCorePos);
+        NetworkManager.INSTANCE.sendToServer(packet);
     }
 
     private static void openCityCitizens(BlockPos cityCorePos) {

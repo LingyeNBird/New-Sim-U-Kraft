@@ -995,14 +995,32 @@ public class NetworkManager {
     public static void broadcastAllCityChunks(net.minecraft.server.MinecraftServer server) {
         com.xiaoliang.simukraft.world.CityChunkData cityChunkData =
                 com.xiaoliang.simukraft.world.CityChunkData.get(server.overworld());
+        com.xiaoliang.simukraft.world.CityData cityData =
+                com.xiaoliang.simukraft.world.CityData.get(server.overworld());
         java.util.Map<UUID, java.util.Set<Long>> allChunks = new java.util.HashMap<>();
         for (java.util.Map.Entry<UUID, java.util.Set<Long>> entry : cityChunkData.getAllCityChunks().entrySet()) {
             allChunks.put(entry.getKey(), new java.util.HashSet<>(entry.getValue()));
         }
-        SyncAllCityChunksPacket packet = new SyncAllCityChunksPacket(allChunks);
+        // 为每个玩家发送数据包，包含该玩家对应的城市ID
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            UUID playerCityId = cityData.refreshPlayerCityAccess(player);
+            SyncAllCityChunksPacket packet = new SyncAllCityChunksPacket(playerCityId, allChunks);
             sendToPlayer(packet, player);
         }
+    }
+
+    public static void sendAllCityChunksToPlayer(ServerPlayer player) {
+        com.xiaoliang.simukraft.world.CityChunkData cityChunkData =
+                com.xiaoliang.simukraft.world.CityChunkData.get(player.serverLevel());
+        com.xiaoliang.simukraft.world.CityData cityData =
+                com.xiaoliang.simukraft.world.CityData.get(player.serverLevel());
+        java.util.Map<UUID, java.util.Set<Long>> allChunks = new java.util.HashMap<>();
+        for (java.util.Map.Entry<UUID, java.util.Set<Long>> entry : cityChunkData.getAllCityChunks().entrySet()) {
+            allChunks.put(entry.getKey(), new java.util.HashSet<>(entry.getValue()));
+        }
+        UUID playerCityId = cityData.refreshPlayerCityAccess(player);
+        SyncAllCityChunksPacket packet = new SyncAllCityChunksPacket(playerCityId, allChunks);
+        sendToPlayer(packet, player);
     }
 
     public static void broadcastAllCityCores(net.minecraft.server.MinecraftServer server) {

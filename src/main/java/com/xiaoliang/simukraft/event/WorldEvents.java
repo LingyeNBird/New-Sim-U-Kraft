@@ -447,6 +447,9 @@ public class WorldEvents {
 
         PlayerCitySnapshot citySnapshot = resolvePlayerCitySnapshot(serverLevel, serverPlayer);
         NetworkManager.sendHUDDataToPlayer(currentDay, worldPopulation, citySnapshot.cityName(), citySnapshot.cityFunds(), citySnapshot.cityPopulation(), serverPlayer);
+
+        // 同步城市区块数据给登录的玩家
+        NetworkManager.sendAllCityChunksToPlayer(serverPlayer);
     }
 
     private static boolean firstLoad = true;

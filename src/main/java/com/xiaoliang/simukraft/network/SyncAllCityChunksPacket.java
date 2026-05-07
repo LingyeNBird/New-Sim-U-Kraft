@@ -9,13 +9,16 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 public class SyncAllCityChunksPacket {
+    private final UUID currentCityId;
     private final Map<UUID, Set<Long>> allCityChunks;
 
-    public SyncAllCityChunksPacket(Map<UUID, Set<Long>> allCityChunks) {
+    public SyncAllCityChunksPacket(UUID currentCityId, Map<UUID, Set<Long>> allCityChunks) {
+        this.currentCityId = currentCityId;
         this.allCityChunks = allCityChunks;
     }
 
     public SyncAllCityChunksPacket(FriendlyByteBuf buf) {
+        this.currentCityId = buf.readUUID();
         int cityCount = buf.readInt();
         this.allCityChunks = new HashMap<>(cityCount);
         for (int i = 0; i < cityCount; i++) {
@@ -30,6 +33,7 @@ public class SyncAllCityChunksPacket {
     }
 
     public void encode(FriendlyByteBuf buf) {
+        buf.writeUUID(currentCityId != null ? currentCityId : new UUID(0, 0));
         buf.writeInt(allCityChunks.size());
         for (Map.Entry<UUID, Set<Long>> entry : allCityChunks.entrySet()) {
             buf.writeUUID(Objects.requireNonNull(entry.getKey()));
@@ -48,8 +52,12 @@ public class SyncAllCityChunksPacket {
         ctx.get().enqueueWork(() -> {
             if (ctx.get().getDirection().getReceptionSide().isClient()) {
                 ClientCityChunkData ccd = ClientCityChunkData.getInstance();
-                UUID currentCityId = ccd.getCityId();
-                ccd.updateAllCityChunks(currentCityId, message.allCityChunks);
+                // 使用服务端发送的当前城市ID，而不是客户端缓存的
+                UUID cityId = message.currentCityId;
+                if (cityId != null && cityId.equals(new UUID(0, 0))) {
+                    cityId = null;
+                }
+                ccd.updateAllCityChunks(cityId, message.allCityChunks);
             }
         });
         ctx.get().setPacketHandled(true);

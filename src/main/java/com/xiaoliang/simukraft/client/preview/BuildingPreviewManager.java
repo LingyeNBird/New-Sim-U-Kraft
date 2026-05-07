@@ -175,6 +175,31 @@ public class BuildingPreviewManager {
         return false;
     }
 
+    /**
+     * 检查整个建筑范围是否都在玩家城市领地内
+     * @return 如果所有方块都在领地内返回true，否则返回false
+     */
+    public static boolean isEntireBuildingInCityTerritory() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return true;
+        }
+        ClientCityChunkData data = ClientCityChunkData.getInstance();
+        java.util.UUID playerCityId = data.getCityId();
+        if (playerCityId == null) {
+            return false;
+        }
+
+        for (SchematicBlockData block : schematicBlocks) {
+            BlockPos pos = block.pos();
+            java.util.UUID owner = data.getChunkOwner(new net.minecraft.world.level.ChunkPos(pos).toLong());
+            if (!playerCityId.equals(owner)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public static void rotatePreview() {
         if (!isPreviewActive) return;
 

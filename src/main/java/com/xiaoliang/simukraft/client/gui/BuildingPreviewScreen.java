@@ -180,6 +180,15 @@ public class BuildingPreviewScreen extends Screen {
                 BuildingPreviewManager.rotatePreview();
                 return true;
             case 257: // ENTER - 开始建造
+                // 检查整个建筑范围是否都在领地内
+                if (!BuildingPreviewManager.isEntireBuildingInCityTerritory()) {
+                    // 显示错误提示（使用红色）
+                    if (this.minecraft != null && this.minecraft.player != null) {
+                        this.minecraft.player.displayClientMessage(
+                            Component.translatable("message.simukraft.construction.outside_city"), true);
+                    }
+                    return true; // 消耗按键但不执行建造
+                }
                 startConstruction();
                 return true;
         }

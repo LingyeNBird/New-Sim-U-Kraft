@@ -187,10 +187,9 @@ public class CustomEntity extends PathfinderMob {
         if (this.isChildForm()) {
             return net.minecraft.world.entity.EntityDimensions.scalable(CHILD_WIDTH, CHILD_HEIGHT);
         }
-        // 如果正在睡觉，扩大碰撞箱
-        if (this.isSleeping()) {
-            // 扩大碰撞箱：宽度从0.6扩大到1.2，高度从1.8保持1.8
-            return net.minecraft.world.entity.EntityDimensions.scalable(0.6F, 1.8F);
+        // 睡姿尺寸必须跟随原版 Pose.SLEEPING，避免床上渲染被裁剪或埋进床里导致“看起来消失”。
+        if (pose == net.minecraft.world.entity.Pose.SLEEPING) {
+            return super.getDimensions(pose);
         }
         return super.getDimensions(pose);
     }

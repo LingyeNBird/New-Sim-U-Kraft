@@ -1361,7 +1361,7 @@ public class NPCRestHandler {
             }
         }
 
-        if (!isBedStillValid(level, restData.bedPos)) {
+        if (!isBedStillValid(level, restData.bedPos, npc)) {
             restData.bedPos = null;
         }
 
@@ -1393,8 +1393,10 @@ public class NPCRestHandler {
             double bedDistance = npc.position().distanceTo(Vec3.atCenterOf(restData.bedPos));
             if (bedDistance <= 2.2D) {
                 tryStartSleeping(npc, restData.bedPos, level);
-                restData.restStage = REST_STAGE_SLEEPING;
-                return;
+                if (npc.isSleeping()) {
+                    restData.restStage = REST_STAGE_SLEEPING;
+                    return;
+                }
             }
         }
 
@@ -1503,7 +1505,7 @@ public class NPCRestHandler {
         npc.setWorking(false);
         npc.setStatusLabel("gui.npc.status.at_home");
 
-        if (!isBedStillValid(level, restData.bedPos)) {
+        if (!isBedStillValid(level, restData.bedPos, npc)) {
             restData.bedPos = findNearbyBed(level, restData.homePos, npc);
             if (restData.bedPos == null) {
                 return;
@@ -1525,7 +1527,7 @@ public class NPCRestHandler {
             return;
         }
 
-        if (!isBedStillValid(level, restData.bedPos)) {
+        if (!isBedStillValid(level, restData.bedPos, npc)) {
             restData.bedPos = null;
             restData.restStage = REST_STAGE_AT_HOME;
             return;
@@ -1746,7 +1748,7 @@ public class NPCRestHandler {
         }
     }
 
-    private static boolean isBedStillValid(ServerLevel level, BlockPos bedPos) {
+    private static boolean isBedStillValid(ServerLevel level, BlockPos bedPos, CustomEntity npc) {
         if (level == null || bedPos == null || !level.isLoaded(bedPos)) {
             return false;
         }
@@ -1756,12 +1758,26 @@ public class NPCRestHandler {
             return false;
         }
 
-        // simukraft: 检查床是否被占用
-        if (bedState.hasProperty(BedBlock.OCCUPIED) && bedState.getValue(BedBlock.OCCUPIED)) {
+        if (isBedOccupiedByOther(level, bedPos, npc)) {
             return false;
         }
 
+        // 床被标记为 occupied 时，允许当前正睡在这张床上的 NPC 继续保持睡眠，
+        // 避免把“自己正在使用的床”误判成失效床并在下一 tick 被踢出睡眠状态。
+        if (bedState.hasProperty(BedBlock.OCCUPIED) && bedState.getValue(BedBlock.OCCUPIED)) {
+            return isSleepingOnBed(npc, getBedHeadPos(level, bedPos));
+        }
+
         return true;
+    }
+
+    private static boolean isSleepingOnBed(CustomEntity npc, BlockPos headPos) {
+        if (npc == null || headPos == null || !npc.isSleeping()) {
+            return false;
+        }
+        return npc.getSleepingPos()
+                .map(headPos::equals)
+                .orElse(false);
     }
 
     /**

@@ -14,6 +14,7 @@ import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
+import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.apache.logging.log4j.LogManager;
@@ -76,8 +77,9 @@ public class NPCRestHandler {
     private static final int REST_STAGE_WAKING_UP = 4;
     private static final int REST_STAGE_WAITING_FOR_BED = 6;
 
-    // 存储正在去工作的NPC数据
     private static final Map<UUID, GoingToWorkData> goingToWorkNPCs = new ConcurrentHashMap<>();
+    private static final Map<String, Optional<BlockPos>> homeTeleportNbtPosCache = new ConcurrentHashMap<>();
+    private static final Map<String, Optional<BlockPos>> residentialControlBoxNbtPosCache = new ConcurrentHashMap<>();
 
     /**
      * NPC休息数据类
@@ -1283,12 +1285,16 @@ public class NPCRestHandler {
     }
 
     /**
-     * 住宅控制盒可切换“回家传送上方/下方”。
-     * 为了避免把NPC直接送进方块里，目标点不可站立时会回退到另一侧。
+     * 优先使用sk中的NBT传送点；未配置、解析失败或落点不安全时回退到控制盒附近。
      */
     private static BlockPos resolveHomeTeleportPos(CustomEntity npc, ServerLevel level, BlockPos homePos) {
         if (npc == null || level == null || level.getServer() == null) {
             return homePos.above();
+        }
+
+        BlockPos markedTeleportPos = resolveMarkedHomeTeleportPos(level, homePos);
+        if (markedTeleportPos != null && canNpcStandAt(level, markedTeleportPos)) {
+            return markedTeleportPos;
         }
 
         boolean teleportToAbove = com.xiaoliang.simukraft.building.ControlBoxDataManager
@@ -1304,6 +1310,101 @@ public class NPCRestHandler {
         }
 
         return homePos.above();
+    }
+
+    private static BlockPos resolveMarkedHomeTeleportPos(ServerLevel level, BlockPos homePos) {
+        com.xiaoliang.simukraft.building.PlacedBuildingManager.PlacedBuildingData placedBuilding =
+                com.xiaoliang.simukraft.building.PlacedBuildingManager.getBuildingByControlBox(homePos);
+        if (placedBuilding == null || placedBuilding.buildingName == null || placedBuilding.buildingName.isBlank()) {
+            return null;
+        }
+
+        String buildingFileName = normalizeBuildingFileName(placedBuilding.buildingName);
+        BlockPos teleportNbtPos = getCachedHomeTeleportNbtPos(buildingFileName);
+        if (teleportNbtPos == null) {
+            return null;
+        }
+
+        BlockPos cachedRelativePos = findPlacedRelativePosByOriginalNbtPos(placedBuilding, teleportNbtPos);
+        if (cachedRelativePos != null) {
+            return homePos.offset(cachedRelativePos);
+        }
+
+        BlockPos controlBoxInNBT = getCachedResidentialControlBoxNbtPos(buildingFileName);
+        if (controlBoxInNBT == null) {
+            controlBoxInNBT = BlockPos.ZERO;
+        }
+
+        return homePos.offset(teleportNbtPos.subtract(controlBoxInNBT));
+    }
+
+    private static BlockPos getCachedHomeTeleportNbtPos(String buildingFileName) {
+        return homeTeleportNbtPosCache
+                .computeIfAbsent(buildingFileName, key -> Optional.ofNullable(
+                        com.xiaoliang.simukraft.building.ControlBoxDataManager.getHomeTeleportNbtPosFromSkFile(key, "residential")
+                ))
+                .orElse(null);
+    }
+
+    private static BlockPos getCachedResidentialControlBoxNbtPos(String buildingFileName) {
+        return residentialControlBoxNbtPosCache
+                .computeIfAbsent(buildingFileName, key -> Optional.ofNullable(findControlBoxInResidentialNBT(key)))
+                .orElse(null);
+    }
+
+    private static BlockPos findPlacedRelativePosByOriginalNbtPos(
+            com.xiaoliang.simukraft.building.PlacedBuildingManager.PlacedBuildingData placedBuilding,
+            BlockPos originalNbtPos) {
+        for (com.xiaoliang.simukraft.building.PlacedBuildingManager.BlockEntry entry : placedBuilding.blocks) {
+            if (originalNbtPos.equals(entry.originalNbtPos)) {
+                return entry.relativePos;
+            }
+        }
+        return null;
+    }
+
+    private static String normalizeBuildingFileName(String buildingFileName) {
+        if (buildingFileName.endsWith(".sk")) {
+            return buildingFileName.substring(0, buildingFileName.length() - 3);
+        }
+        if (buildingFileName.endsWith(".nbt")) {
+            return buildingFileName.substring(0, buildingFileName.length() - 4);
+        }
+        return buildingFileName;
+    }
+
+    private static BlockPos findControlBoxInResidentialNBT(String buildingFileName) {
+        try {
+            java.util.List<SchematicNBTLoader.SchematicBlock> blocks = loadResidentialSchematicBlocks(buildingFileName);
+            if (blocks == null || blocks.isEmpty()) {
+                return null;
+            }
+
+            for (SchematicNBTLoader.SchematicBlock block : blocks) {
+                String blockId = ForgeRegistries.BLOCKS.getKey(block.blockState().getBlock()).toString();
+                if (blockId.contains("control_box")) {
+                    return block.pos();
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.warn("[NPCRestHandler] 解析住宅NBT控制盒位置失败: {}, {}", buildingFileName, e.getMessage());
+        }
+        return null;
+    }
+
+    private static java.util.List<SchematicNBTLoader.SchematicBlock> loadResidentialSchematicBlocks(String buildingFileName) {
+        String nbtFilePath = "simukraftbuilding/residential/" + buildingFileName + ".nbt";
+        java.io.File nbtFile = new java.io.File(nbtFilePath);
+        if (nbtFile.exists()) {
+            return SchematicNBTLoader.loadSchematicBlocks(nbtFilePath);
+        }
+
+        String resourcePath = "assets/simukraft/building/residential/" + buildingFileName + ".nbt";
+        java.io.InputStream is = SchematicNBTLoader.class.getClassLoader().getResourceAsStream(resourcePath);
+        if (is == null) {
+            return null;
+        }
+        return SchematicNBTLoader.loadSchematicBlocksFromStream(is);
     }
 
     private static void markArrivedHome(CustomEntity npc, RestData restData) {

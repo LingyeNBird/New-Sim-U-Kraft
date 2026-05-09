@@ -755,6 +755,7 @@ public class CustomEntity extends PathfinderMob {
 
     @Override
     public void remove(RemovalReason reason) {
+        com.xiaoliang.simukraft.utils.NpcChunkLoadManager.onNpcRemoved(this, reason);
         super.remove(reason);
     }
 
@@ -804,6 +805,7 @@ public class CustomEntity extends PathfinderMob {
         }
 
         if (!this.level().isClientSide) {
+            com.xiaoliang.simukraft.utils.NpcChunkLoadManager.updateNpcLocation(this);
             String currentJob = getJob();
             boolean aliveAndActive = !this.isDeadOrDying() && !isDying;
             // 计算是否有活跃任务（用于同步到客户端）
@@ -1855,6 +1857,7 @@ public class CustomEntity extends PathfinderMob {
         if (constructionTask != null) {
             com.xiaoliang.simukraft.building.ConstructionTask completedTask = constructionTask;
             String buildingName = completedTask.getBuildingName();
+            String buildingFileName = completedTask.getInternalBuildingName();
             String category = completedTask.getCategory();
             BlockPos buildBoxPos = completedTask.getBuildBoxPos();
 
@@ -1877,7 +1880,7 @@ public class CustomEntity extends PathfinderMob {
                     // 注册建筑结构（使用实际放置的方块列表，包含旋转信息）
                     com.xiaoliang.simukraft.building.PlacedBuildingManager.registerPlacedBuildingFromTask(
                         controlBoxPos,
-                        buildingName,
+                        buildingFileName,
                         category,
                         serverLevel.dimension().location().toString(),
                         placedBlocks

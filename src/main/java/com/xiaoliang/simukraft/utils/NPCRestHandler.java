@@ -37,9 +37,10 @@ public class NPCRestHandler {
     private static final int MORNING_END_TIME = 0; // 早上结束时间（约6:00）
     private static final int MORNING_PREPARE_TIME = 23000; // 早上准备出发时间（约5:00）
     private static final int MAX_GOING_TO_WORK_TIME = 6000; // 最长去工作时间（游戏刻5分钟）
-    private static final int REST_START_SPREAD_TICKS = 200; // 将下班入口摊平到约10秒
-    private static final int MAX_REST_STARTS_PER_UPDATE = 8;
+    private static final int REST_START_SPREAD_TICKS = 600; // 将下班入口摊平到约30秒
+    private static final int MAX_REST_STARTS_PER_UPDATE = 2;
     private static final int MAX_REST_STOPS_PER_UPDATE = 8;
+    private static final int MAX_HOME_PATH_STARTS_PER_UPDATE = 1;
     private static final int BED_SEARCH_HORIZONTAL_RADIUS = 8;
     private static final int BED_SEARCH_VERTICAL_RADIUS = 4;
     private static final long BED_REPATH_INTERVAL_TICKS = 40L;
@@ -78,6 +79,7 @@ public class NPCRestHandler {
     private static final int REST_STAGE_WAITING_FOR_BED = 6;
 
     private static final Map<UUID, GoingToWorkData> goingToWorkNPCs = new ConcurrentHashMap<>();
+    private static final Map<UUID, Long> pendingHomePathStartTicks = new ConcurrentHashMap<>();
     private static final Map<String, Optional<BlockPos>> homeTeleportNbtPosCache = new ConcurrentHashMap<>();
     private static final Map<String, Optional<BlockPos>> residentialControlBoxNbtPosCache = new ConcurrentHashMap<>();
 
@@ -477,7 +479,7 @@ public class NPCRestHandler {
         }
 
         // 开始寻路回家
-        startPathfindingToHome(npc, homePos);
+        queuePathfindingToHome(npcUuid, level);
     }
 
     /**
@@ -1022,11 +1024,17 @@ public class NPCRestHandler {
 
         int startedRestCount = 0;
         int stoppedRestCount = 0;
+        int homePathStartCount = 0;
 
         for (CustomEntity npc : npcs) {
             if (npc == null || !npc.isAlive()) continue;
 
             UUID npcUuid = npc.getUUID();
+            if (pendingHomePathStartTicks.containsKey(npcUuid) && homePathStartCount < MAX_HOME_PATH_STARTS_PER_UPDATE) {
+                if (startQueuedPathfindingToHome(npc, level)) {
+                    homePathStartCount++;
+                }
+            }
             if (NPCFamilyManager.isNpcBusyWithFamily(npcUuid)) {
                 continue;
             }
@@ -1062,6 +1070,7 @@ public class NPCRestHandler {
                         LOGGER.info("[NPCRestHandler] NPC {} 正在去工作，但到休息时间了，优先回家休息", npc.getFullName());
                     }
                     goingToWorkNPCs.remove(npcUuid);
+                    pendingHomePathStartTicks.remove(npcUuid);
                     enqueueMainThreadLevelTask(level, () -> npc.getNavigation().stop(), "StopNavigation-" + npcUuid);
                 }
 
@@ -1125,6 +1134,8 @@ public class NPCRestHandler {
 
         PerformanceMonitor.recordValue("rest.startsQueued", startedRestCount);
         PerformanceMonitor.recordValue("rest.stopsQueued", stoppedRestCount);
+        PerformanceMonitor.recordValue("rest.homePathStarts", homePathStartCount);
+        PerformanceMonitor.recordValue("rest.homePathPending", pendingHomePathStartTicks.size());
         PerformanceMonitor.recordValue("rest.active", restingNPCs.size());
         PerformanceMonitor.recordValue("rest.goingToWork", goingToWorkNPCs.size());
     }
@@ -1410,6 +1421,7 @@ public class NPCRestHandler {
     private static void markArrivedHome(CustomEntity npc, RestData restData) {
         restData.hasArrivedHome = true;
         restData.restStage = REST_STAGE_AT_HOME;
+        pendingHomePathStartTicks.remove(npc.getUUID());
         npcPathfindingStatus.put(npc.getUUID(), false);
         npc.stopAllMovement();
         npc.setStatusLabel("gui.npc.status.at_home");
@@ -2439,6 +2451,25 @@ public class NPCRestHandler {
      * 开始寻路回家
      * menglannnn: 完全使用新的自定义寻路系统，不再使用原版寻路
      */
+    private static void queuePathfindingToHome(UUID npcUuid, ServerLevel level) {
+        if (npcUuid == null || level == null) return;
+        pendingHomePathStartTicks.putIfAbsent(npcUuid, level.getGameTime());
+        npcPathfindingStatus.put(npcUuid, false);
+    }
+
+    private static boolean startQueuedPathfindingToHome(CustomEntity npc, ServerLevel level) {
+        if (npc == null || level == null) return false;
+        UUID npcUuid = npc.getUUID();
+        RestData restData = restingNPCs.get(npcUuid);
+        if (restData == null || restData.hasArrivedHome || restData.homePos == null) {
+            pendingHomePathStartTicks.remove(npcUuid);
+            return false;
+        }
+        pendingHomePathStartTicks.remove(npcUuid);
+        startPathfindingToHome(npc, restData.homePos);
+        return true;
+    }
+
     private static void startPathfindingToHome(CustomEntity npc, BlockPos homePos) {
         if (npc == null || homePos == null) return;
 
@@ -2567,6 +2598,7 @@ public class NPCRestHandler {
         npcSubStates.clear();
         npcHomePositions.clear();
         npcPathfindingStatus.clear();
+        pendingHomePathStartTicks.clear();
         npcPreviousWorkStatus.clear();
         npcPreviousJob.clear();
         // 不再使用npcPreviousConstructionTask，建造任务统一从JSON恢复

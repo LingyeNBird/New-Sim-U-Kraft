@@ -990,10 +990,18 @@ public class CommercialWorkHandler {
      */
     public static float getEfficiencyByLevel(int level) {
         int safeLevel = Math.max(1, level);
-        int maxLevel = com.xiaoliang.simukraft.config.ServerConfig.getNpcMaxLevel();
+        int maxLevel = Math.max(2, getNpcMaxLevelOrDefault());
         float progress = (float) (safeLevel - 1) / (maxLevel - 1);
         // 1级=1.0, 20级=3.0
         return 1.0f + progress * 2.0f;
+    }
+
+    private static int getNpcMaxLevelOrDefault() {
+        try {
+            return com.xiaoliang.simukraft.config.ServerConfig.getNpcMaxLevel();
+        } catch (IllegalStateException e) {
+            return 20;
+        }
     }
 
     /**

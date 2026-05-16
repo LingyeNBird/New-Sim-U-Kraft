@@ -478,8 +478,9 @@ public class NPCRestHandler {
                 npc.getFullName(), homePos, resumeWorkStatus, currentJob);
         }
 
-        // 开始寻路回家
-        queuePathfindingToHome(npcUuid, level);
+        // 夜间回家直接传送，避免大批NPC同时触发A*回家造成主线程尖峰卡顿。
+        teleportNPCHomeWithEffects(npc, homePos);
+        markArrivedHome(npc, restData);
     }
 
     /**
@@ -1423,8 +1424,17 @@ public class NPCRestHandler {
         restData.restStage = REST_STAGE_AT_HOME;
         pendingHomePathStartTicks.remove(npc.getUUID());
         npcPathfindingStatus.put(npc.getUUID(), false);
+        clearPathfinderCallbacks(npc);
         npc.stopAllMovement();
         npc.setStatusLabel("gui.npc.status.at_home");
+    }
+
+    private static void clearPathfinderCallbacks(CustomEntity npc) {
+        if (npc == null || npc.getNPCPathNavigator() == null) {
+            return;
+        }
+        npc.getNPCPathNavigator().setOnPathComplete(null);
+        npc.getNPCPathNavigator().setOnPathFail(null);
     }
 
     /**
@@ -2474,6 +2484,28 @@ public class NPCRestHandler {
         if (npc == null || homePos == null) return;
 
         try {
+            if (npc.getNPCPathNavigator() != null) {
+                npc.getNPCPathNavigator().setOnPathComplete(() -> {
+                    RestData completedRestData = restingNPCs.get(npc.getUUID());
+                    if (completedRestData != null) {
+                        markArrivedHome(npc, completedRestData);
+                    } else {
+                        clearPathfinderCallbacks(npc);
+                        npcPathfindingStatus.put(npc.getUUID(), false);
+                    }
+                });
+                npc.getNPCPathNavigator().setOnPathFail(() -> {
+                    RestData failedRestData = restingNPCs.get(npc.getUUID());
+                    if (failedRestData != null && failedRestData.homePos != null) {
+                        teleportNPCHomeWithEffects(npc, failedRestData.homePos);
+                        markArrivedHome(npc, failedRestData);
+                    } else {
+                        clearPathfinderCallbacks(npc);
+                        npcPathfindingStatus.put(npc.getUUID(), false);
+                    }
+                });
+            }
+
             if (npc.moveToWithNewPathfinder(homePos, 1.0D)) {
                 npcPathfindingStatus.put(npc.getUUID(), true);
                 if (ServerConfig.isDebugLogEnabled()) {
@@ -2487,9 +2519,9 @@ public class NPCRestHandler {
             UUID npcUuid = npc.getUUID();
             RestData restData = restingNPCs.get(npcUuid);
             if (restData != null) {
-                restData.hasArrivedHome = true;
-                restData.restStage = REST_STAGE_AT_HOME;
+                markArrivedHome(npc, restData);
             }
+            clearPathfinderCallbacks(npc);
             npcPathfindingStatus.put(npcUuid, false);
             npc.stopNewPathfinder();
         } catch (Exception e) {

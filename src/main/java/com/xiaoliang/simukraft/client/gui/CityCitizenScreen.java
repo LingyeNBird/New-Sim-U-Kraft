@@ -33,7 +33,7 @@ public class CityCitizenScreen extends AbstractTransitionScreen {
     private static final int CITIZENS_PER_PAGE = 6;
     private static final int COLUMNS = 3;
     private static final int BUTTON_WIDTH = 180;
-    private static final int BUTTON_HEIGHT = 80;
+    private static final int BUTTON_HEIGHT = 92;
     private static final int BUTTON_SPACING = 10;
 
     private List<CitizenInfo> citizens;
@@ -60,7 +60,8 @@ public class CityCitizenScreen extends AbstractTransitionScreen {
     private long lastRefreshTime = 0;
 
     // 本地市民信息类 - 使用服务端响应包中的定义
-    public record CitizenInfo(UUID uuid, String name, int npcId, boolean hasResidence, String job, String skinPath, int level, int xp) {
+    public record CitizenInfo(UUID uuid, String name, int npcId, boolean hasResidence, String job, String skinPath, int level, int xp,
+                              boolean hasPosition, BlockPos position) {
         /**
          * 从服务端响应数据转换为本地数据
          */
@@ -73,7 +74,9 @@ public class CityCitizenScreen extends AbstractTransitionScreen {
                 responseInfo.job(),
                 responseInfo.skinPath(),
                 responseInfo.level(),
-                responseInfo.xp()
+                responseInfo.xp(),
+                responseInfo.hasPosition(),
+                responseInfo.position()
             );
         }
     }
@@ -330,8 +333,8 @@ public class CityCitizenScreen extends AbstractTransitionScreen {
                         // 创建新的CitizenInfo对象，因为record是不可变的
                         citizens.set(citizens.indexOf(citizen), 
                             new CitizenInfo(citizen.uuid(), newName, citizen.npcId(), 
-                                          citizen.hasResidence(), citizen.job(), citizen.skinPath(),
-                                          citizen.level(), citizen.xp()));
+                                           citizen.hasResidence(), citizen.job(), citizen.skinPath(),
+                                           citizen.level(), citizen.xp(), citizen.hasPosition(), citizen.position()));
                         break;
                     }
                 }
@@ -397,7 +400,9 @@ public class CityCitizenScreen extends AbstractTransitionScreen {
                                     "unemployed", // 设置为失业
                                     citizen.skinPath(),
                                     citizen.level(),
-                                    citizen.xp()
+                                    citizen.xp(),
+                                    citizen.hasPosition(),
+                                    citizen.position()
                                 ));
                                 break;
                             }
@@ -723,7 +728,7 @@ public class CityCitizenScreen extends AbstractTransitionScreen {
 
             // 动态调整信息显示
             int availableHeight = this.height - 25;
-            int lineCount = 3;
+            int lineCount = 4;
             int lineHeight = Math.max(8, Math.min(12, availableHeight / lineCount));
 
             int startY = this.getY() + 25;
@@ -761,6 +766,14 @@ public class CityCitizenScreen extends AbstractTransitionScreen {
                     startY + lineHeight * 2,
                     statusColor
                 );
+
+                guiGraphics.drawString(
+                    nn(Minecraft.getInstance().font),
+                    nn(Component.translatable("gui.citizen.position", safeString(getPositionDisplay(citizen)))),
+                    textStartX,
+                    startY + lineHeight * 3,
+                    infoColor
+                );
             } else if (this.height >= 40) {
                 // 高度较小时只显示关键信息
                 guiGraphics.drawString(
@@ -783,6 +796,14 @@ public class CityCitizenScreen extends AbstractTransitionScreen {
 
             // 绘制经验条和等级（在按钮底部）
             renderExpBarAndLevel(guiGraphics);
+        }
+
+        private static String getPositionDisplay(CitizenInfo citizen) {
+            BlockPos pos = citizen.position();
+            if (!citizen.hasPosition() || pos == null) {
+                return nn(Component.translatable("gui.citizen.position_unknown")).getString();
+            }
+            return pos.getX() + ", " + pos.getY() + ", " + pos.getZ();
         }
 
         /**

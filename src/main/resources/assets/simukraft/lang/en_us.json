@@ -573,6 +573,8 @@
   "gui.citizen.job": "Job: %s",
   "gui.citizen.has_residence": "Has Residence",
   "gui.citizen.no_residence": "No Residence",
+  "gui.citizen.position": "Pos: %s",
+  "gui.citizen.position_unknown": "position not found",
 
   "gui.city_official.title": "Official Management",
   "gui.city_official.back": "Back",

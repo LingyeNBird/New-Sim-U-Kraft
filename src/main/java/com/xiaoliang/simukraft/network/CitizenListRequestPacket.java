@@ -129,7 +129,9 @@ public record CitizenListRequestPacket(BlockPos cityCorePos) {
                                 job,  // 发送原始英文职业，让客户端进行翻译
                                 skinPath,
                                 npcLevel,
-                                npcXp
+                                npcXp,
+                                true,
+                                npc.blockPosition()
                             ));
                             addedNpcUuids.add(npcUuid);
                         }
@@ -171,7 +173,9 @@ public record CitizenListRequestPacket(BlockPos cityCorePos) {
                         job,
                         NPCDataManager.getNPCSkinPath(server, npcUuid),
                         NPCDataManager.getNPCLevel(server, npcUuid),
-                        NPCDataManager.getNPCXp(server, npcUuid)
+                        NPCDataManager.getNPCXp(server, npcUuid),
+                        false,
+                        null
                 ));
                 addedNpcUuids.add(npcUuid);
             }

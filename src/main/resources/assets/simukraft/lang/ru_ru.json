@@ -567,6 +567,8 @@
   "gui.citizen.job": "Профессия: %s",
   "gui.citizen.has_residence": "Есть жильё",
   "gui.citizen.no_residence": "Без жилья",
+  "gui.citizen.position": "Коорд.: %s",
+  "gui.citizen.position_unknown": "координаты не найдены",
 
   "gui.city_official.title": "Управление чиновниками",
   "gui.city_official.back": "Назад",

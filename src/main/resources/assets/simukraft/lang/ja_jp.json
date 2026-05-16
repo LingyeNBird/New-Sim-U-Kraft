@@ -569,6 +569,8 @@
   "gui.citizen.job": "職業: %s",
   "gui.citizen.has_residence": "住居あり",
   "gui.citizen.no_residence": "住居なし",
+  "gui.citizen.position": "座標: %s",
+  "gui.citizen.position_unknown": "座標が見つかりません",
 
   "gui.city_official.title": "役人管理",
   "gui.city_official.back": "戻る",

@@ -2,6 +2,7 @@ package com.xiaoliang.simukraft.network;
 
 import com.xiaoliang.simukraft.client.gui.CityCitizenScreen;
 import com.xiaoliang.simukraft.utils.NPCDataManager;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.network.NetworkEvent;
@@ -33,7 +34,9 @@ public record CitizenListResponsePacket(List<CitizenInfo> citizenInfos) {
             String skinPath = buf.readUtf();
             int level = buf.readInt();
             int xp = buf.readInt();
-            infos.add(new CitizenInfo(uuid, name, npcId, hasResidence, job, skinPath, level, xp));
+            boolean hasPosition = buf.readBoolean();
+            BlockPos position = hasPosition ? buf.readBlockPos() : null;
+            infos.add(new CitizenInfo(uuid, name, npcId, hasResidence, job, skinPath, level, xp, hasPosition, position));
         }
         return infos;
     }
@@ -49,6 +52,10 @@ public record CitizenListResponsePacket(List<CitizenInfo> citizenInfos) {
             buf.writeUtf(info.skinPath());
             buf.writeInt(info.level());
             buf.writeInt(info.xp());
+            buf.writeBoolean(info.hasPosition());
+            if (info.hasPosition() && info.position() != null) {
+                buf.writeBlockPos(info.position());
+            }
         }
     }
 
@@ -64,6 +71,7 @@ public record CitizenListResponsePacket(List<CitizenInfo> citizenInfos) {
     /**
      * 市民信息记录类
      */
-    public record CitizenInfo(UUID uuid, String name, int npcId, boolean hasResidence, String job, String skinPath, int level, int xp) {
+    public record CitizenInfo(UUID uuid, String name, int npcId, boolean hasResidence, String job, String skinPath, int level, int xp,
+                              boolean hasPosition, BlockPos position) {
     }
 }

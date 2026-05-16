@@ -569,6 +569,8 @@
   "gui.citizen.job": "业：%s",
   "gui.citizen.has_residence": "有宅",
   "gui.citizen.no_residence": "无宅",
+  "gui.citizen.position": "坐标：%s",
+  "gui.citizen.position_unknown": "未得坐标",
 
   "gui.city_official.title": "吏务",
   "gui.city_official.back": "返",

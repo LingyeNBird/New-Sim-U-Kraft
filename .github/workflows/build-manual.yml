@@ -2,9 +2,14 @@ name: Build Mod Jar
 
 on:
   workflow_dispatch:
+    inputs:
+      jar_name:
+        description: 'Output jar name, with or without .jar'
+        required: false
+        default: ''
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -29,11 +34,57 @@ jobs:
       - name: Build
         run: ./gradlew build --stacktrace
 
+      - name: Prepare Release Jar
+        id: package
+        env:
+          JAR_NAME: ${{ inputs.jar_name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          source_jar="build/reobfJar/output.jar"
+          if [ ! -f "$source_jar" ]; then
+            echo "No reobfuscated jar found at $source_jar" >&2
+            exit 1
+          fi
+
+          output_name="$JAR_NAME"
+          if [ -z "$output_name" ]; then
+            jars=(build/libs/*.jar)
+            if [ ${#jars[@]} -eq 0 ]; then
+              echo "No named jar found in build/libs" >&2
+              exit 1
+            fi
+            output_name="$(basename "${jars[0]}")"
+          fi
+
+          output_name="$(basename "$output_name")"
+          output_name="${output_name%.jar}"
+          output_name="${output_name%.JAR}.jar"
+          if [ "$output_name" = ".jar" ]; then
+            echo "Invalid jar name" >&2
+            exit 1
+          fi
+
+          mkdir -p release
+          cp "$source_jar" "release/$output_name"
+          echo "Prepared release jar from $source_jar -> release/$output_name"
+          echo "jar_path=release/$output_name" >> "$GITHUB_OUTPUT"
+
       - name: Upload Jar
         uses: actions/upload-artifact@v4
         with:
           name: simukraft-build-artifacts
-          path: |
-            build/libs/*.jar
-            build/reobfJar/*.jar
+          path: ${{ steps.package.outputs.jar_path }}
           if-no-files-found: error
+
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: build-${{ github.run_number }}-${{ github.run_attempt }}
+        run: |
+          gh release create "$RELEASE_TAG" "${{ steps.package.outputs.jar_path }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Sim-U-Kraft $RELEASE_TAG" \
+            --notes "Automated build from $GITHUB_SHA." \
+            --prerelease

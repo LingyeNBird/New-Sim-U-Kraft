@@ -50,6 +50,8 @@ public class ManifestItem extends Item {
     private static final String TAG_RECIPE_ID = "RecipeId";
     private static final String TAG_PRODUCT_GROUPS = "ProductGroups";
     private static final String TAG_PRODUCT_ITEM = "ProductItem";
+    private static final String TAG_CHECKED_BY_ITEM = "CheckedByItem";
+    private static final String SOURCE_TYPE_BUILD = "build";
 
     public ManifestItem() {
         super(new Item.Properties().stacksTo(1));
@@ -146,7 +148,7 @@ public class ManifestItem extends Item {
                 if (task != null) {
                     tag.putString(TAG_BUILDING_NAME, task.getDisplayName());
                     tag.putLong(TAG_BUILD_BOX_POS, buildBoxPos.asLong());
-                    tag.putString(TAG_SOURCE_TYPE, "build");
+                    tag.putString(TAG_SOURCE_TYPE, SOURCE_TYPE_BUILD);
                     Map<String, Integer> materials = task.getRequiredMaterials();
                     writeMaterials(tag, materials);
                 }
@@ -232,6 +234,7 @@ public class ManifestItem extends Item {
     private static void writeMaterials(@Nonnull CompoundTag tag, @Nonnull Map<String, Integer> materials) {
         ListTag materialsList = new ListTag();
         ListTag checkedList = new ListTag();
+        CompoundTag checkedByItemTag = tag.contains(TAG_CHECKED_BY_ITEM) ? tag.getCompound(TAG_CHECKED_BY_ITEM).copy() : new CompoundTag();
 
         for (Map.Entry<String, Integer> entry : materials.entrySet()) {
             if (entry.getKey() == null || entry.getKey().isBlank() || entry.getValue() <= 0) {
@@ -241,11 +244,13 @@ public class ManifestItem extends Item {
             materialTag.putString("Item", entry.getKey());
             materialTag.putInt("Count", entry.getValue());
             materialsList.add(materialTag);
-            checkedList.add(StringTag.valueOf("false"));
+            boolean checked = checkedByItemTag.getBoolean(entry.getKey());
+            checkedList.add(StringTag.valueOf(String.valueOf(checked)));
         }
 
         tag.put(TAG_MATERIALS, materialsList);
         tag.put(TAG_CHECKED, checkedList);
+        tag.put(TAG_CHECKED_BY_ITEM, checkedByItemTag);
         tag.remove(TAG_PRODUCT_GROUPS);
     }
 
@@ -416,7 +421,7 @@ public class ManifestItem extends Item {
      */
     public static void setChecked(@Nonnull ItemStack stack, int index, boolean checked) {
         CompoundTag tag = stack.getTag();
-        if (tag == null || !tag.contains(TAG_CHECKED)) {
+        if (tag == null || !tag.contains(TAG_CHECKED) || !tag.contains(TAG_MATERIALS)) {
             return;
         }
         
@@ -424,8 +429,60 @@ public class ManifestItem extends Item {
         if (index >= 0 && index < checkedList.size()) {
             checkedList.set(index, StringTag.valueOf(String.valueOf(checked)));
             tag.put(TAG_CHECKED, checkedList);
+            ListTag materialsList = tag.getList(TAG_MATERIALS, Tag.TAG_COMPOUND);
+            CompoundTag checkedByItemTag = tag.contains(TAG_CHECKED_BY_ITEM) ? tag.getCompound(TAG_CHECKED_BY_ITEM).copy() : new CompoundTag();
+            if (index < materialsList.size()) {
+                String itemId = materialsList.getCompound(index).getString("Item");
+                if (!itemId.isBlank()) {
+                    checkedByItemTag.putBoolean(itemId, checked);
+                }
+            }
+            tag.put(TAG_CHECKED_BY_ITEM, checkedByItemTag);
             stack.setTag(tag);
         }
+    }
+
+    public static void reapplyCheckedByItemId(@Nonnull ItemStack stack, @Nonnull Map<String, Boolean> checkedByItemId) {
+        CompoundTag tag = stack.getTag();
+        if (tag == null || !tag.contains(TAG_MATERIALS)) {
+            return;
+        }
+
+        ListTag materialsList = tag.getList(TAG_MATERIALS, Tag.TAG_COMPOUND);
+        ListTag checkedList = new ListTag();
+        for (int i = 0; i < materialsList.size(); i++) {
+            CompoundTag materialTag = materialsList.getCompound(i);
+            String itemId = materialTag.getString("Item");
+            boolean checked = checkedByItemId.getOrDefault(itemId, false);
+            checkedList.add(StringTag.valueOf(String.valueOf(checked)));
+        }
+        tag.put(TAG_CHECKED, checkedList);
+        CompoundTag checkedByItemTag = new CompoundTag();
+        for (Map.Entry<String, Boolean> entry : checkedByItemId.entrySet()) {
+            if (entry.getKey() != null && !entry.getKey().isBlank()) {
+                checkedByItemTag.putBoolean(entry.getKey(), entry.getValue());
+            }
+        }
+        tag.put(TAG_CHECKED_BY_ITEM, checkedByItemTag);
+        stack.setTag(tag);
+    }
+
+    @Nonnull
+    public static Map<String, Boolean> getCheckedByItemId(@Nonnull ItemStack stack) {
+        Map<String, Boolean> checkedByItemId = new LinkedHashMap<>();
+        CompoundTag tag = stack.getTag();
+        if (tag == null || !tag.contains(TAG_CHECKED_BY_ITEM)) {
+            for (MaterialEntry entry : getMaterials(stack)) {
+                checkedByItemId.putIfAbsent(entry.itemId(), entry.checked());
+            }
+            return checkedByItemId;
+        }
+
+        CompoundTag checkedByItemTag = tag.getCompound(TAG_CHECKED_BY_ITEM);
+        for (String key : checkedByItemTag.getAllKeys()) {
+            checkedByItemId.put(key, checkedByItemTag.getBoolean(key));
+        }
+        return checkedByItemId;
     }
 
     /**
@@ -447,6 +504,27 @@ public class ManifestItem extends Item {
             return tag.getString(TAG_RECIPE_NAME);
         }
         return "";
+    }
+
+    @Nonnull
+    public static String getSourceType(@Nonnull ItemStack stack) {
+        CompoundTag tag = stack.getTag();
+        if (tag != null && tag.contains(TAG_SOURCE_TYPE)) {
+            return tag.getString(TAG_SOURCE_TYPE);
+        }
+        return "";
+    }
+
+    public static boolean isBuildSource(@Nonnull ItemStack stack) {
+        return SOURCE_TYPE_BUILD.equals(getSourceType(stack));
+    }
+
+    public static long getBuildBoxPosLong(@Nonnull ItemStack stack) {
+        CompoundTag tag = stack.getTag();
+        if (tag != null && tag.contains(TAG_BUILD_BOX_POS)) {
+            return tag.getLong(TAG_BUILD_BOX_POS);
+        }
+        return Long.MIN_VALUE;
     }
 
     /**

@@ -1,6 +1,8 @@
 package com.xiaoliang.simukraft.client.gui;
 
 import com.xiaoliang.simukraft.item.ManifestItem;
+import com.xiaoliang.simukraft.network.ManifestBuildRefreshPacket;
+import com.xiaoliang.simukraft.network.NetworkManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -22,11 +24,13 @@ import java.util.List;
 @SuppressWarnings("null")
 public class ManifestScreen extends Screen {
 
-    private final ItemStack manifestStack;
+    private ItemStack manifestStack;
     private List<ManifestItem.MaterialEntry> materials;
     private List<PageSlice> pages;
     private int currentPage = 0;
     private int itemsPerPage = 6;
+    private boolean remainingOnly = true;
+    private final boolean buildSourceManifest;
 
     // 剪贴板尺寸
     private static final int CLIPBOARD_WIDTH = 200;
@@ -73,12 +77,15 @@ public class ManifestScreen extends Screen {
     // 翻页按钮
     private Button prevPageButton;
     private Button nextPageButton;
+    private Button refreshButton;
+    private Button modeToggleButton;
 
     public ManifestScreen(ItemStack manifestStack) {
         super(Component.translatable("gui.manifest.title"));
         this.manifestStack = manifestStack;
         this.materials = ManifestItem.getMaterials(manifestStack);
         this.pages = new ArrayList<>();
+        this.buildSourceManifest = ManifestItem.isBuildSource(manifestStack);
     }
 
     @Override
@@ -128,6 +135,54 @@ public class ManifestScreen extends Screen {
         this.addRenderableWidget(this.prevPageButton);
         this.addRenderableWidget(this.nextPageButton);
 
+        if (buildSourceManifest) {
+            this.refreshButton = Button.builder(
+                    Component.translatable("gui.manifest.refresh"),
+                    button -> requestRefresh()
+                ).pos(paperX + 4, paperY + 4)
+                .size(38, 16)
+                .build();
+            this.modeToggleButton = Button.builder(
+                    getModeToggleLabel(),
+                    button -> {
+                        remainingOnly = !remainingOnly;
+                        button.setMessage(getModeToggleLabel());
+                        requestRefresh();
+                    }
+                ).pos(paperX + paperW - 48, paperY + 4)
+                .size(44, 16)
+                .build();
+            this.addRenderableWidget(this.refreshButton);
+            this.addRenderableWidget(this.modeToggleButton);
+            requestRefresh();
+        }
+
+        updatePageButtons();
+    }
+
+    private Component getModeToggleLabel() {
+        return remainingOnly
+            ? Component.translatable("gui.manifest.mode.remaining")
+            : Component.translatable("gui.manifest.mode.all");
+    }
+
+    private void requestRefresh() {
+        long buildBoxPosLong = ManifestItem.getBuildBoxPosLong(manifestStack);
+        if (buildBoxPosLong == Long.MIN_VALUE) {
+            return;
+        }
+        NetworkManager.sendToServer(new ManifestBuildRefreshPacket(buildBoxPosLong, remainingOnly, manifestStack.copy()));
+    }
+
+    public void applyRefreshedManifest(ItemStack refreshedStack, boolean refreshedRemainingOnly) {
+        this.manifestStack.setTag(refreshedStack.getTag() == null ? null : refreshedStack.getTag().copy());
+        this.remainingOnly = refreshedRemainingOnly;
+        this.materials = ManifestItem.getMaterials(this.manifestStack);
+        this.pages = buildPages();
+        this.currentPage = Math.min(currentPage, Math.max(0, pages.size() - 1));
+        if (this.modeToggleButton != null) {
+            this.modeToggleButton.setMessage(getModeToggleLabel());
+        }
         updatePageButtons();
     }
 

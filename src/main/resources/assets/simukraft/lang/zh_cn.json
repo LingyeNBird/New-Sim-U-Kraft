@@ -1697,6 +1697,9 @@
   "gui.manifest.no_materials": "§7暂无需求数据",
   "gui.manifest.materials_title": "通用原材料",
   "gui.manifest.default_recipe": "默认配方",
+  "gui.manifest.refresh": "刷新",
+  "gui.manifest.mode.all": "全部",
+  "gui.manifest.mode.remaining": "需求",
   "gui.close": "关闭",
 
   "message.simukraft.manifest.filled": "§a清单已填充！右键打开查看需求。"

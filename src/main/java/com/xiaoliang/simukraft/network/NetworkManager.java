@@ -384,6 +384,12 @@ public class NetworkManager {
                 MaterialRequirementsResponsePacket::decode,
                 MaterialRequirementsResponsePacket::handle);
 
+        INSTANCE.registerMessage(id++,
+                ManifestBuildRefreshPacket.class,
+                ManifestBuildRefreshPacket::encode,
+                ManifestBuildRefreshPacket::decode,
+                ManifestBuildRefreshPacket::handle);
+
         // 创建规划任务数据包
         INSTANCE.registerMessage(id++,
                 CreatePlanningTaskPacket.class,

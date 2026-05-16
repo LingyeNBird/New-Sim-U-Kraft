@@ -26,3 +26,6 @@ forge*changelog.txt
 /maps/
 /.claude/settings.local.json
 /logs/
+
+# local handoff / work notes
+/BUILD_WORK_DIARY.md

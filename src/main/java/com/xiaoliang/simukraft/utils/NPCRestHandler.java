@@ -44,6 +44,7 @@ public class NPCRestHandler {
     private static final int BED_SEARCH_HORIZONTAL_RADIUS = 8;
     private static final int BED_SEARCH_VERTICAL_RADIUS = 4;
     private static final long BED_REPATH_INTERVAL_TICKS = 40L;
+    private static final long BED_NOT_FOUND_RETRY_TICKS = 200L;
     private static final long BED_COOLDOWN_TICKS = 1000L; // simukraft: 上床冷却时间（5秒 = 100 ticks）
 
     // 存储正在休息的NPC数据
@@ -1518,7 +1519,7 @@ public class NPCRestHandler {
         if (restData.bedPos == null && gameTime >= restData.nextBedRetryTick) {
             // simukraft: 传入NPC参数，限制只在自己家范围内找床
             restData.bedPos = findNearbyBed(level, restData.homePos, npc);
-            restData.nextBedRetryTick = gameTime + BED_REPATH_INTERVAL_TICKS;
+            restData.nextBedRetryTick = gameTime + (restData.bedPos == null ? BED_NOT_FOUND_RETRY_TICKS : BED_REPATH_INTERVAL_TICKS);
             if (restData.bedPos != null) {
                 //LOGGER.info("[NPCRestHandler] NPC {} 在住宅附近找到床位: {}", npc.getFullName(), restData.bedPos);
             }
@@ -1654,8 +1655,15 @@ public class NPCRestHandler {
         npc.setWorking(false);
         npc.setStatusLabel("gui.npc.status.at_home");
 
+        long gameTime = level.getGameTime();
         if (!isBedStillValid(level, restData.bedPos, npc)) {
+            restData.bedPos = null;
+            if (gameTime < restData.nextBedRetryTick) {
+                return;
+            }
+
             restData.bedPos = findNearbyBed(level, restData.homePos, npc);
+            restData.nextBedRetryTick = gameTime + (restData.bedPos == null ? BED_NOT_FOUND_RETRY_TICKS : BED_REPATH_INTERVAL_TICKS);
             if (restData.bedPos == null) {
                 return;
             }

@@ -1,10 +1,13 @@
 package com.xiaoliang.simukraft.building;
 
+import com.xiaoliang.simukraft.Simukraft;
 import com.xiaoliang.simukraft.client.preview.SchematicNBTLoader;
 import com.xiaoliang.simukraft.config.ServerConfig;
 import com.xiaoliang.simukraft.entity.CustomEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
@@ -32,12 +35,16 @@ import net.minecraft.world.level.block.ChainBlock;
 import net.minecraft.world.level.block.IronBarsBlock;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 @SuppressWarnings("null")
 public class ConstructionTask {
     private static final long MATERIAL_SLEEP_TICKS = 60L;
+    private static final int INIT_BLOCKS_PER_TICK = 1500;
+    private static final long INIT_TIME_BUDGET_NANOS = 4_000_000L;
     private static final Property<Direction> FACING_PROPERTY = requireProperty(BlockStateProperties.FACING);
     private static final Property<Direction> HORIZONTAL_FACING_PROPERTY = requireProperty(BlockStateProperties.HORIZONTAL_FACING);
     private static final Property<Direction> HOPPER_FACING_PROPERTY = requireProperty(BlockStateProperties.FACING_HOPPER);
@@ -67,18 +74,18 @@ public class ConstructionTask {
     private int currentBlockIndex = 0;
     private boolean isCompleted = false;
     @Nonnull
-    private final List<BlockInfo> blocksToPlace;
+    private final List<BlockInfo> blocksToPlace = new ArrayList<>();
     @Nonnull
-    private final Map<BlockPos, Integer> blockIndexLookup;
+    private final Map<BlockPos, Integer> blockIndexLookup = new HashMap<>();
     @Nonnull
-    private final List<BlockPos> controlBoxPositions;
+    private final List<BlockPos> controlBoxPositions = new ArrayList<>();
     @Nonnull
-    private final List<LayerRange> layerRanges;
+    private final List<LayerRange> layerRanges = new ArrayList<>();
     private int currentLayerRangeIndex = 0;
     @Nullable
     private ServerLevel runtimeLevel = null;
     @Nonnull
-    private final Set<ChunkPos> requiredWorkflowChunks;
+    private Set<ChunkPos> requiredWorkflowChunks = Set.of();
     @Nonnull
     private final Set<ChunkPos> workflowForcedChunks = new LinkedHashSet<>();
     // 修复：添加区块加载等待计数器，解决退出重进后箱子找不到的问题
@@ -88,6 +95,29 @@ public class ConstructionTask {
     private final BuilderMaterialCache materialCache;
     private boolean waitingForMaterials = false;
     private long nextMaterialCheckTick = Long.MIN_VALUE;
+    @Nonnull
+    private InitializationState initializationState = InitializationState.NOT_STARTED;
+    @Nullable
+    private CompletableFuture<CompoundTag> pendingNbtFuture;
+    @Nullable
+    private ListTag pendingBlocksList;
+    @Nullable
+    private ListTag pendingPalette;
+    @Nullable
+    private NavigableMap<Integer, List<List<BlockInfo>>> pendingLayerBuckets;
+    @Nullable
+    private Set<ChunkPos> pendingRequiredWorkflowChunks;
+    @Nullable
+    private List<BlockPos> pendingControlBoxPositions;
+    @Nullable
+    private Map<String, Integer> pendingMaterialRequirements;
+    private int pendingBlockCursor = 0;
+    private int pendingCurrentBlockIndex = 0;
+    private int estimatedTotalBlocks = 0;
+    @Nonnull
+    private final Map<String, Integer> materialRequirements = new LinkedHashMap<>();
+    private boolean controlBoxesRegistered = false;
+    private boolean cityTerritoryValidated = false;
 
     public ConstructionTask(@Nonnull CustomEntity builder, @Nonnull String buildingName, @Nonnull String category, @Nonnull BlockPos startPos,
                            @Nonnull BlockPos buildBoxPos, @Nonnull Direction facing, @Nonnull String displayName, double cost) {
@@ -100,16 +130,8 @@ public class ConstructionTask {
         this.facing = Objects.requireNonNull(facing);
         this.displayName = Objects.requireNonNull(displayName);
         this.cost = cost;
-        this.blocksToPlace = List.copyOf(Objects.requireNonNull(loadAndParseBlocks()));
-        this.blockIndexLookup = Map.copyOf(buildBlockIndexLookup(this.blocksToPlace));
-        this.controlBoxPositions = collectControlBoxPositions(this.blocksToPlace);
-        this.layerRanges = List.copyOf(buildLayerRanges(this.blocksToPlace));
         this.materialCache = new BuilderMaterialCache(this.buildBoxPos);
-        this.requiredWorkflowChunks = collectRequiredWorkflowChunks();
-
-        if (builder.level() instanceof ServerLevel serverLevel) {
-            ensureWorkflowChunksForced(serverLevel);
-        }
+        initializeBoundsOnly();
     }
 
     /**
@@ -129,17 +151,18 @@ public class ConstructionTask {
         this.facing = tempFacing != null ? tempFacing : Direction.NORTH;
         this.displayName = Objects.requireNonNull(displayName);
         this.cost = cost;
-        this.blocksToPlace = List.copyOf(Objects.requireNonNull(loadAndParseBlocks()));
-        this.blockIndexLookup = Map.copyOf(buildBlockIndexLookup(this.blocksToPlace));
-        this.controlBoxPositions = collectControlBoxPositions(this.blocksToPlace);
-        this.layerRanges = List.copyOf(buildLayerRanges(this.blocksToPlace));
         this.materialCache = new BuilderMaterialCache(this.buildBoxPos);
-        this.requiredWorkflowChunks = collectRequiredWorkflowChunks();
+        initializeBoundsOnly();
+    }
 
-        if (level != null) {
-            ensureWorkflowChunksForced(level);
-        }
+    private void initializeBoundsOnly() {
+        this.estimatedTotalBlocks = Integer.MAX_VALUE;
+        this.requiredWorkflowChunks = Set.copyOf(baseWorkflowChunks());
+    }
 
+    @Nonnull
+    private String getSchematicFilePath() {
+        return "simukraftbuilding/" + category + "/" + buildingName + ".nbt";
     }
 
     @Nonnull
@@ -147,7 +170,7 @@ public class ConstructionTask {
         List<BlockInfo> blocks = new ArrayList<>();
 
         // 使用新的NBT加载方式
-        String filePath = "simukraftbuilding/" + category + "/" + buildingName + ".nbt";
+        String filePath = getSchematicFilePath();
         List<SchematicNBTLoader.SchematicBlock> schematicBlocks = SchematicNBTLoader.loadSchematicBlocks(filePath);
 
         for (SchematicNBTLoader.SchematicBlock schematicBlock : schematicBlocks) {
@@ -203,7 +226,7 @@ public class ConstructionTask {
          * 4 = 液体相关方块（统一最后放置，避免流体更新影响前序建造）
          * 5 = 空气方块（拆除任务放到层尾，避免层切换时先扫大量空气）
          */
-        private int getBlockPriority(BlockState state) {
+        private static int getBlockPriority(BlockState state) {
             Block block = state.getBlock();
 
             if (state.isAir()) {
@@ -236,7 +259,7 @@ public class ConstructionTask {
         /**
          * 检查方块是否需要支撑（会掉落或需要依附在其他方块上）
          */
-        private boolean requiresSupport(Block block) {
+        private static boolean requiresSupport(Block block) {
             return block instanceof DoorBlock ||
                    block instanceof TrapDoorBlock ||
                    block instanceof ButtonBlock ||
@@ -250,7 +273,7 @@ public class ConstructionTask {
         /**
          * 检查方块是否为不完整方块
          */
-        private boolean isIncompleteBlock(Block block) {
+        private static boolean isIncompleteBlock(Block block) {
             return block instanceof SlabBlock ||
                    block instanceof StairBlock ||
                    block instanceof FenceBlock ||
@@ -450,7 +473,211 @@ public class ConstructionTask {
     }
 
     public boolean hasNextBlock() {
-        return currentBlockIndex < blocksToPlace.size();
+        if (isInitialized()) {
+            return currentBlockIndex < blocksToPlace.size();
+        }
+        return !isInitializationFailed();
+    }
+
+    public boolean isInitialized() {
+        return initializationState == InitializationState.READY;
+    }
+
+    public boolean isInitializing() {
+        return initializationState == InitializationState.LOADING_NBT || initializationState == InitializationState.PARSING_BLOCKS;
+    }
+
+    public boolean isInitializationFailed() {
+        return initializationState == InitializationState.FAILED;
+    }
+
+    public boolean tickInitialization(@Nullable ServerLevel serverLevel) {
+        if (isInitialized()) {
+            if (serverLevel != null) {
+                ensureCurrentWorkflowChunksForced(serverLevel);
+            }
+            return true;
+        }
+
+        if (isInitializationFailed()) {
+            return false;
+        }
+
+        if (serverLevel != null) {
+            this.runtimeLevel = serverLevel;
+        }
+
+        try {
+            if (initializationState == InitializationState.NOT_STARTED) {
+                beginInitialization();
+            }
+            if (initializationState == InitializationState.LOADING_NBT) {
+                finishAsyncNbtLoadIfReady();
+            }
+            if (initializationState == InitializationState.PARSING_BLOCKS) {
+                parseInitializationBatch();
+            }
+            if (isInitialized() && serverLevel != null) {
+                ensureCurrentWorkflowChunksForced(serverLevel);
+            }
+        } catch (Exception e) {
+            initializationState = InitializationState.FAILED;
+            pendingNbtFuture = null;
+            pendingBlocksList = null;
+            pendingPalette = null;
+            pendingLayerBuckets = null;
+            pendingRequiredWorkflowChunks = null;
+            pendingControlBoxPositions = null;
+            pendingMaterialRequirements = null;
+            Simukraft.LOGGER.error("[ConstructionTask] Failed to initialize construction task {}/{}", category, buildingName, e);
+        }
+
+        return isInitialized();
+    }
+
+    private void beginInitialization() {
+        initializationState = InitializationState.LOADING_NBT;
+        String filePath = getSchematicFilePath();
+        pendingNbtFuture = CompletableFuture.supplyAsync(() -> {
+            try {
+                return SchematicNBTLoader.loadSchematicNBT(filePath);
+            } catch (java.io.IOException e) {
+                throw new CompletionException(e);
+            }
+        });
+        Simukraft.LOGGER.info("[ConstructionTask] Started async NBT load for {}", displayName);
+    }
+
+    private void finishAsyncNbtLoadIfReady() {
+        if (pendingNbtFuture == null || !pendingNbtFuture.isDone()) {
+            return;
+        }
+
+        CompletableFuture<CompoundTag> completedFuture = pendingNbtFuture;
+        pendingNbtFuture = null;
+        CompoundTag nbt = completedFuture.join();
+        CompoundTag root = nbt.contains("Schematic", 10) ? nbt.getCompound("Schematic") : nbt;
+        if (!root.contains("blocks", 9) || !root.contains("palette", 9)) {
+            throw new IllegalStateException("Invalid schematic format");
+        }
+
+        pendingBlocksList = root.getList("blocks", 10);
+        pendingPalette = root.getList("palette", 10);
+        estimatedTotalBlocks = pendingBlocksList.size();
+        SchematicNBTLoader.SchematicSize size = SchematicNBTLoader.readSchematicSize(root);
+        Set<ChunkPos> initialChunks = baseWorkflowChunks();
+        if (size != null) {
+            addBoundingBoxChunks(initialChunks, size);
+        }
+        requiredWorkflowChunks = Set.copyOf(initialChunks);
+        pendingLayerBuckets = new TreeMap<>();
+        pendingRequiredWorkflowChunks = baseWorkflowChunks();
+        pendingControlBoxPositions = new ArrayList<>();
+        pendingMaterialRequirements = new LinkedHashMap<>();
+        pendingBlockCursor = 0;
+        initializationState = InitializationState.PARSING_BLOCKS;
+        Simukraft.LOGGER.info("[ConstructionTask] Started staged initialization for {} ({} blocks)", displayName, estimatedTotalBlocks);
+    }
+
+    private void parseInitializationBatch() {
+        if (pendingBlocksList == null || pendingPalette == null || pendingLayerBuckets == null
+                || pendingRequiredWorkflowChunks == null || pendingControlBoxPositions == null || pendingMaterialRequirements == null) {
+            initializationState = InitializationState.FAILED;
+            return;
+        }
+
+        long deadline = System.nanoTime() + INIT_TIME_BUDGET_NANOS;
+        int processed = 0;
+        while (pendingBlockCursor < pendingBlocksList.size()
+                && processed < INIT_BLOCKS_PER_TICK
+                && System.nanoTime() < deadline) {
+            CompoundTag blockTag = pendingBlocksList.getCompound(pendingBlockCursor++);
+            SchematicNBTLoader.SchematicBlock schematicBlock = SchematicNBTLoader.parseSchematicBlock(blockTag, pendingPalette);
+            if (schematicBlock != null) {
+                BlockInfo blockInfo = toBlockInfo(schematicBlock);
+                addToLayerBuckets(blockInfo, pendingLayerBuckets);
+                collectParsedBlockMetadata(blockInfo, pendingRequiredWorkflowChunks, pendingControlBoxPositions, pendingMaterialRequirements);
+            }
+            processed++;
+        }
+
+        if (pendingBlockCursor >= pendingBlocksList.size()) {
+            finishInitialization(pendingLayerBuckets, pendingRequiredWorkflowChunks, pendingControlBoxPositions, pendingMaterialRequirements);
+        }
+    }
+
+    @Nonnull
+    private BlockInfo toBlockInfo(@Nonnull SchematicNBTLoader.SchematicBlock schematicBlock) {
+        BlockPos pos = Objects.requireNonNull(schematicBlock.pos());
+        BlockState state = Objects.requireNonNull(schematicBlock.blockState());
+        BlockPos rotatedPos = rotatePosition(pos);
+        BlockState rotatedState = Objects.requireNonNull(rotateBlockState(state));
+        BlockPos finalPos = new BlockPos(
+            startPos.getX() + rotatedPos.getX(),
+            startPos.getY() + rotatedPos.getY(),
+            startPos.getZ() + rotatedPos.getZ()
+        );
+        return new BlockInfo(finalPos, rotatedState, pos);
+    }
+
+    private void addToLayerBuckets(@Nonnull BlockInfo blockInfo, @Nonnull NavigableMap<Integer, List<List<BlockInfo>>> layerBuckets) {
+        List<List<BlockInfo>> priorityBuckets = layerBuckets.computeIfAbsent(blockInfo.pos().getY(), y -> createPriorityBuckets());
+        priorityBuckets.get(LayeredBlockComparator.getBlockPriority(blockInfo.state())).add(blockInfo);
+    }
+
+    private void collectParsedBlockMetadata(@Nonnull BlockInfo blockInfo, @Nonnull Set<ChunkPos> chunks,
+                                            @Nonnull List<BlockPos> controlBoxes, @Nonnull Map<String, Integer> materials) {
+        chunks.add(new ChunkPos(blockInfo.pos()));
+        if (isControlBoxBlock(blockInfo.state())) {
+            controlBoxes.add(blockInfo.pos());
+        }
+
+        BlockState state = blockInfo.state();
+        if (!state.isAir() && com.xiaoliang.simukraft.utils.MaterialManager.requiresMaterial(state)) {
+            String blockId = com.xiaoliang.simukraft.utils.MaterialManager.getBlockId(state.getBlock());
+            materials.merge(blockId, 1, Integer::sum);
+        }
+    }
+
+    @Nonnull
+    private static List<List<BlockInfo>> createPriorityBuckets() {
+        List<List<BlockInfo>> buckets = new ArrayList<>(6);
+        for (int i = 0; i < 6; i++) {
+            buckets.add(new ArrayList<>());
+        }
+        return buckets;
+    }
+
+    private void finishInitialization(@Nonnull NavigableMap<Integer, List<List<BlockInfo>>> layerBuckets,
+                                      @Nonnull Set<ChunkPos> chunks,
+                                      @Nonnull List<BlockPos> controlBoxes,
+                                      @Nonnull Map<String, Integer> materials) {
+        blocksToPlace.clear();
+        for (List<List<BlockInfo>> priorityBuckets : layerBuckets.values()) {
+            for (List<BlockInfo> bucket : priorityBuckets) {
+                blocksToPlace.addAll(bucket);
+            }
+        }
+
+        blockIndexLookup.clear();
+        blockIndexLookup.putAll(buildBlockIndexLookup(blocksToPlace));
+        controlBoxPositions.clear();
+        controlBoxPositions.addAll(controlBoxes);
+        layerRanges.clear();
+        layerRanges.addAll(buildLayerRanges(blocksToPlace));
+        requiredWorkflowChunks = Set.copyOf(chunks);
+        materialRequirements.clear();
+        materialRequirements.putAll(materials);
+
+        pendingBlocksList = null;
+        pendingPalette = null;
+        pendingLayerBuckets = null;
+        pendingRequiredWorkflowChunks = null;
+        pendingControlBoxPositions = null;
+        pendingMaterialRequirements = null;
+        initializationState = InitializationState.READY;
+        setCurrentBlockIndex(pendingCurrentBlockIndex);
+        Simukraft.LOGGER.info("[ConstructionTask] Finished staged initialization for {} ({} blocks)", displayName, blocksToPlace.size());
     }
 
     /**
@@ -460,7 +687,7 @@ public class ConstructionTask {
         this.builder = builder;
         if (builder != null && builder.level() instanceof ServerLevel serverLevel) {
             this.runtimeLevel = serverLevel;
-            ensureWorkflowChunksForced(serverLevel);
+            ensureCurrentWorkflowChunksForced(serverLevel);
         }
     }
 
@@ -479,32 +706,46 @@ public class ConstructionTask {
     }
 
     @Nonnull
-    private Set<ChunkPos> collectRequiredWorkflowChunks() {
+    private Set<ChunkPos> baseWorkflowChunks() {
         Set<ChunkPos> chunks = new LinkedHashSet<>();
         chunks.add(new ChunkPos(startPos));
         chunks.add(new ChunkPos(buildBoxPos));
-        for (BlockInfo blockInfo : blocksToPlace) {
-            chunks.add(new ChunkPos(blockInfo.pos()));
-        }
         for (Direction direction : Direction.values()) {
             chunks.add(new ChunkPos(buildBoxPos.relative(direction)));
         }
-        return Set.copyOf(chunks);
+        return chunks;
     }
 
-    private void ensureWorkflowChunksForced(@Nonnull ServerLevel serverLevel) {
-        for (ChunkPos chunkPos : requiredWorkflowChunks) {
-            ensureWorkflowChunkForced(serverLevel, chunkPos);
+    private void addBoundingBoxChunks(@Nonnull Set<ChunkPos> chunks, @Nonnull SchematicNBTLoader.SchematicSize size) {
+        BlockPos[] corners = new BlockPos[] {
+            new BlockPos(0, 0, 0),
+            new BlockPos(size.x() - 1, 0, 0),
+            new BlockPos(0, 0, size.z() - 1),
+            new BlockPos(size.x() - 1, 0, size.z() - 1)
+        };
+        for (BlockPos corner : corners) {
+            chunks.add(new ChunkPos(startPos.offset(rotatePosition(corner))));
+        }
+    }
+
+    private void ensureCurrentWorkflowChunksForced(@Nonnull ServerLevel serverLevel) {
+        ensureWorkflowChunkForced(serverLevel, new ChunkPos(buildBoxPos));
+        ensureWorkflowChunkForced(serverLevel, new ChunkPos(startPos));
+        if (isInitialized() && currentBlockIndex >= 0 && currentBlockIndex < blocksToPlace.size()) {
+            ensureWorkflowChunkForced(serverLevel, new ChunkPos(blocksToPlace.get(currentBlockIndex).pos()));
         }
     }
 
     private void ensureWorkflowChunkForced(@Nonnull ServerLevel serverLevel, @Nonnull ChunkPos chunkPos) {
         long chunkKey = ChunkPos.asLong(chunkPos.x, chunkPos.z);
+        boolean alreadyForcedByOtherOwner = serverLevel.getForcedChunks().contains(chunkKey) && !workflowForcedChunks.contains(chunkPos);
         if (!workflowForcedChunks.contains(chunkPos) && !serverLevel.getForcedChunks().contains(chunkKey)) {
             serverLevel.setChunkForced(chunkPos.x, chunkPos.z, true);
             workflowForcedChunks.add(chunkPos);
         }
-        serverLevel.getChunk(chunkPos.x, chunkPos.z);
+        if (workflowForcedChunks.contains(chunkPos) || alreadyForcedByOtherOwner || serverLevel.hasChunk(chunkPos.x, chunkPos.z)) {
+            serverLevel.getChunk(chunkPos.x, chunkPos.z);
+        }
     }
 
     private long lastWarningTime = 0;
@@ -832,17 +1073,6 @@ public class ConstructionTask {
         return layerRanges.get(currentLayerRangeIndex);
     }
 
-    @Nonnull
-    private static List<BlockPos> collectControlBoxPositions(@Nonnull List<BlockInfo> blocks) {
-        List<BlockPos> positions = new ArrayList<>();
-        for (BlockInfo info : blocks) {
-            if (isControlBoxBlock(info.state())) {
-                positions.add(info.pos());
-            }
-        }
-        return Objects.requireNonNull(List.copyOf(positions));
-    }
-
     private static boolean isControlBoxBlock(@Nonnull BlockState state) {
         var blockId = net.minecraftforge.registries.ForgeRegistries.BLOCKS.getKey(state.getBlock());
         if (blockId == null) return false;
@@ -852,6 +1082,7 @@ public class ConstructionTask {
 
     public void markCompleted() {
         this.isCompleted = true;
+        cancelPendingInitialization();
         // 修复：释放所有强制加载的区块
         releaseForcedChunks();
 
@@ -860,6 +1091,7 @@ public class ConstructionTask {
 
     public void cancel() {
         this.isCompleted = true;
+        cancelPendingInitialization();
         this.currentBlockIndex = blocksToPlace.size();
         // 修复：释放所有强制加载的区块
         releaseForcedChunks();
@@ -875,18 +1107,31 @@ public class ConstructionTask {
      * 只在区块未就绪时执行完整检查逻辑
      */
     private boolean areChunksReady(ServerLevel serverLevel) {
+        ensureCurrentWorkflowChunksForced(serverLevel);
+
         // 如果已经等待过区块加载，直接返回状态
         if (chunkLoadWaitTicks > 0) {
             return checkAndWaitChunks(serverLevel);
         }
-        
-        for (ChunkPos chunkPos : requiredWorkflowChunks) {
-            if (!serverLevel.hasChunk(chunkPos.x, chunkPos.z)) {
-                // 发现未加载的区块，进入等待模式
-                return checkAndWaitChunks(serverLevel);
-            }
+
+        ChunkPos currentChunk = getCurrentTargetChunk();
+        if (currentChunk != null && !serverLevel.hasChunk(currentChunk.x, currentChunk.z)) {
+            return checkAndWaitChunks(serverLevel);
         }
         return true; // 所有区块都已加载
+    }
+
+    private void cancelPendingInitialization() {
+        if (pendingNbtFuture != null) {
+            pendingNbtFuture.cancel(true);
+            pendingNbtFuture = null;
+        }
+        pendingBlocksList = null;
+        pendingPalette = null;
+        pendingLayerBuckets = null;
+        pendingRequiredWorkflowChunks = null;
+        pendingControlBoxPositions = null;
+        pendingMaterialRequirements = null;
     }
     
     /**
@@ -896,12 +1141,10 @@ public class ConstructionTask {
         int maxWaitTicks = ServerConfig.getBuilderChunkLoadWaitTicks();
         boolean allChunksLoaded = true;
         
-        for (ChunkPos chunkPos : requiredWorkflowChunks) {
-            if (!serverLevel.hasChunk(chunkPos.x, chunkPos.z)) {
-                allChunksLoaded = false;
-                ensureWorkflowChunkForced(serverLevel, chunkPos);
-                break;
-            }
+        ChunkPos chunkPos = getCurrentTargetChunk();
+        if (chunkPos != null && !serverLevel.hasChunk(chunkPos.x, chunkPos.z)) {
+            allChunksLoaded = false;
+            ensureWorkflowChunkForced(serverLevel, chunkPos);
         }
 
         if (!allChunksLoaded) {
@@ -925,6 +1168,17 @@ public class ConstructionTask {
         return true;
     }
 
+    @Nullable
+    private ChunkPos getCurrentTargetChunk() {
+        if (!isInitialized()) {
+            return new ChunkPos(buildBoxPos);
+        }
+        if (currentBlockIndex >= 0 && currentBlockIndex < blocksToPlace.size()) {
+            return new ChunkPos(blocksToPlace.get(currentBlockIndex).pos());
+        }
+        return new ChunkPos(buildBoxPos);
+    }
+
     /**
      * 修复：释放所有强制加载的区块
      */
@@ -934,13 +1188,16 @@ public class ConstructionTask {
             return;
         }
         for (ChunkPos chunkPos : workflowForcedChunks) {
-            serverLevel.setChunkForced(chunkPos.x, chunkPos.z, false);
+            long chunkKey = ChunkPos.asLong(chunkPos.x, chunkPos.z);
+            if (serverLevel.getForcedChunks().contains(chunkKey)) {
+                serverLevel.setChunkForced(chunkPos.x, chunkPos.z, false);
+            }
         }
         workflowForcedChunks.clear();
     }
 
     public boolean isCompleted() {
-        return isCompleted || currentBlockIndex >= blocksToPlace.size();
+        return isCompleted || (isInitialized() && currentBlockIndex >= blocksToPlace.size());
     }
 
     /**
@@ -960,7 +1217,7 @@ public class ConstructionTask {
 
     @Nonnull
     public List<BlockInfo> getBlocksToPlace() {
-        return blocksToPlace;
+        return Collections.unmodifiableList(blocksToPlace);
     }
     
     public String getInternalBuildingName() {
@@ -992,8 +1249,10 @@ public class ConstructionTask {
     }
 
     public int getProgress() {
-        if (blocksToPlace.isEmpty()) return 100;
-        return (int) ((double) currentBlockIndex / blocksToPlace.size() * 100);
+        int totalBlocks = getTotalBlocks();
+        if (totalBlocks <= 0 || totalBlocks == Integer.MAX_VALUE) return 0;
+        int progress = (int) ((double) currentBlockIndex / totalBlocks * 100);
+        return Math.max(0, Math.min(100, progress));
     }
 
     public int getCurrentBlockIndex() {
@@ -1001,8 +1260,13 @@ public class ConstructionTask {
     }
 
     public void setCurrentBlockIndex(int index) {
-        // 允许设置索引为 blocksToPlace.size() 表示建造完成
-        this.currentBlockIndex = Math.max(0, Math.min(index, blocksToPlace.size()));
+        if (!isInitialized()) {
+            this.currentBlockIndex = Math.max(0, index);
+            this.pendingCurrentBlockIndex = this.currentBlockIndex;
+            return;
+        }
+        int totalBlocks = getTotalBlocks();
+        this.currentBlockIndex = Math.max(0, Math.min(index, totalBlocks));
         this.currentLayerRangeIndex = 0;
         syncCurrentLayerRangeIndex();
     }
@@ -1011,12 +1275,33 @@ public class ConstructionTask {
      * 获取总方块数量
      */
     public int getTotalBlocks() {
-        return blocksToPlace.size();
+        return isInitialized() ? blocksToPlace.size() : estimatedTotalBlocks;
+    }
+
+    public String getTotalBlocksDisplay() {
+        int totalBlocks = getTotalBlocks();
+        return isInitialized() || totalBlocks != Integer.MAX_VALUE ? String.valueOf(totalBlocks) : "loading";
     }
 
     @Nonnull
     public List<BlockPos> getControlBoxPositions() {
         return controlBoxPositions;
+    }
+
+    public boolean hasRegisteredControlBoxes() {
+        return controlBoxesRegistered;
+    }
+
+    public void markControlBoxesRegistered() {
+        this.controlBoxesRegistered = true;
+    }
+
+    public boolean isCityTerritoryValidated() {
+        return cityTerritoryValidated;
+    }
+
+    public void markCityTerritoryValidated() {
+        this.cityTerritoryValidated = true;
     }
 
     /**
@@ -1033,27 +1318,15 @@ public class ConstructionTask {
      */
     @Nonnull
     public Map<String, Integer> getRequiredMaterials() {
-        Map<String, Integer> materials = new LinkedHashMap<>();
-        
-        for (BlockInfo blockInfo : blocksToPlace) {
-            BlockState state = blockInfo.state();
-            
-            // 跳过空气方块
-            if (state.isAir()) {
-                continue;
-            }
-            
-            // 检查是否需要材料
-            if (!com.xiaoliang.simukraft.utils.MaterialManager.requiresMaterial(state)) {
-                continue;
-            }
-            
-            // 获取方块ID作为材料ID
-            String blockId = com.xiaoliang.simukraft.utils.MaterialManager.getBlockId(state.getBlock());
-            materials.merge(blockId, 1, Integer::sum);
-        }
-        
-        return materials;
+        return new LinkedHashMap<>(materialRequirements);
+    }
+
+    private enum InitializationState {
+        NOT_STARTED,
+        LOADING_NBT,
+        PARSING_BLOCKS,
+        READY,
+        FAILED
     }
 
     private record LayerRange(int y, int startIndex, int endIndex) {

@@ -149,7 +149,10 @@ public class ManifestItem extends Item {
                     tag.putString(TAG_BUILDING_NAME, task.getDisplayName());
                     tag.putLong(TAG_BUILD_BOX_POS, buildBoxPos.asLong());
                     tag.putString(TAG_SOURCE_TYPE, SOURCE_TYPE_BUILD);
-                    Map<String, Integer> materials = task.getRequiredMaterials();
+                    Map<String, Integer> materials = new LinkedHashMap<>();
+                    if (task.isInitialized()) {
+                        materials.putAll(task.getRequiredMaterials());
+                    }
                     writeMaterials(tag, materials);
                 }
             }

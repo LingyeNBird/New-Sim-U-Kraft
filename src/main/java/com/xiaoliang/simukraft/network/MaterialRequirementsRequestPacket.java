@@ -102,6 +102,10 @@ public class MaterialRequirementsRequestPacket {
      * 从建造任务中收集材料需求（扣除箱子中已有的）
      */
     public static List<MaterialRequirementsResponsePacket.MaterialInfo> collectMaterialsForTask(ConstructionTask task, ServerLevel level) {
+        if (!task.isInitialized()) {
+            return materialsFromCachedRequirements(task, level);
+        }
+
         // 获取建筑盒位置
         BlockPos buildBoxPos = task.getBuildBoxPos();
 
@@ -177,6 +181,19 @@ public class MaterialRequirementsRequestPacket {
         // 按数量排序（从多到少）
         result.sort((a, b) -> Integer.compare(b.count, a.count));
 
+        return result;
+    }
+
+    private static List<MaterialRequirementsResponsePacket.MaterialInfo> materialsFromCachedRequirements(ConstructionTask task, ServerLevel level) {
+        Map<String, Integer> chestMaterials = countMaterialsInChests(level, task.getBuildBoxPos());
+        List<MaterialRequirementsResponsePacket.MaterialInfo> result = new ArrayList<>();
+        for (Map.Entry<String, Integer> entry : task.getRequiredMaterials().entrySet()) {
+            int count = Math.max(0, entry.getValue() - chestMaterials.getOrDefault(entry.getKey(), 0));
+            if (count > 0) {
+                result.add(new MaterialRequirementsResponsePacket.MaterialInfo(entry.getKey(), "", count));
+            }
+        }
+        result.sort((a, b) -> Integer.compare(b.count, a.count));
         return result;
     }
 

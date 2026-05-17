@@ -1020,6 +1020,13 @@ public class CustomEntity extends PathfinderMob {
 
         // 处理建造任务
         if (!this.level().isClientSide && workStatus == WorkStatus.WORKING && constructionTask != null) {
+            if (this.level() instanceof ServerLevel serverLevel && !constructionTask.isInitialized() && !constructionTask.isInitializationFailed()) {
+                constructionTask.tickInitialization(serverLevel);
+                constructionProgress = constructionTask.getProgress();
+                registerConstructionControlBoxesIfReady(constructionTask);
+                return;
+            }
+
             // simukraft: 午休和买饭期间暂停建造，避免插队吃饭时继续偷偷施工
             if (getWorkSubState() == WorkSubState.LUNCH_BREAK
                     || getWorkSubState() == WorkSubState.BUYING_FOOD) {
@@ -1045,6 +1052,10 @@ public class CustomEntity extends PathfinderMob {
                     // menglan: 循环放置多个方块，直到达到计算出的数量或没有更多方块
                     while (placedBlocksCount < blocksToPlace && constructionTask.hasNextBlock() && scannedCandidates < maxScanPerTick) {
                         scannedCandidates++;
+                        if (!validateConstructionTerritory(serverLevel, constructionTask)) {
+                            return;
+                        }
+
                         // 修复：传入serverLevel以检查方块是否已存在，避免重复消耗材料
                         com.xiaoliang.simukraft.building.ConstructionTask.BlockInfo blockInfo = constructionTask.getNextBlock(serverLevel);
                         if (blockInfo == null) break;
@@ -1187,6 +1198,50 @@ public class CustomEntity extends PathfinderMob {
         if (!this.level().isClientSide && shouldRunScheduledTask(400)) {
             checkLifespanAndDie();
         }
+    }
+
+    private void registerConstructionControlBoxesIfReady(com.xiaoliang.simukraft.building.ConstructionTask task) {
+        if (task == null || !task.isInitialized() || task.hasRegisteredControlBoxes()) {
+            return;
+        }
+
+        List<BlockPos> controlBoxPositions = task.getControlBoxPositions();
+        if (controlBoxPositions.isEmpty()) {
+            task.markControlBoxesRegistered();
+            return;
+        }
+
+        UUID builderCityId = getCityId();
+        if (builderCityId == null) {
+            builderCityId = UUID.nameUUIDFromBytes(("city_" + getUUID()).getBytes());
+            setCityId(builderCityId);
+        }
+
+        String buildingFileName = task.getInternalBuildingName();
+        com.xiaoliang.simukraft.building.ConstructionBoxMapping.registerPendingBoxes(
+            level(), controlBoxPositions, builderCityId, task.getDisplayName(), buildingFileName
+        );
+        task.markControlBoxesRegistered();
+        Simukraft.LOGGER.info("[CustomEntity] Registered {} construction control boxes for {}", controlBoxPositions.size(), task.getDisplayName());
+    }
+
+    private boolean validateConstructionTerritory(ServerLevel serverLevel, com.xiaoliang.simukraft.building.ConstructionTask task) {
+        if (task == null || task.isCityTerritoryValidated()) {
+            return true;
+        }
+
+        if (com.xiaoliang.simukraft.world.CityTerritoryUtils.isChunkSetInsideCityTerritory(serverLevel, getCityId(), task.getRequiredWorkflowChunks())) {
+            task.markCityTerritoryValidated();
+            return true;
+        }
+
+        Simukraft.LOGGER.warn("[CustomEntity] Cancelling construction outside city territory: {}", task.getDisplayName());
+        if (serverLevel.getServer() != null) {
+            com.xiaoliang.simukraft.job.jobs.builder.BuilderWorkService.INSTANCE.removeConstructionTask(serverLevel.getServer(), getUUID());
+        }
+        task.cancel();
+        setConstructionTask(null);
+        return false;
     }
 
     private void completeBuildStepAfterSkip() {
@@ -2644,6 +2699,10 @@ public class CustomEntity extends PathfinderMob {
             return;
         }
         if (!"builder".equals(getJob()) || getConstructionTask() == null || getConstructionTask().isCompleted()) {
+            setWorkNeedDetail("");
+            return;
+        }
+        if (!getConstructionTask().isInitialized()) {
             setWorkNeedDetail("");
             return;
         }

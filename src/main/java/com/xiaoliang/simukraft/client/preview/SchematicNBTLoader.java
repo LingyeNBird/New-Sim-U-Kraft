@@ -27,6 +27,39 @@ public class SchematicNBTLoader {
     public record SchematicBlock(BlockPos pos, BlockState blockState) {
     }
 
+    public record SchematicSize(int x, int y, int z) {
+    }
+
+    public static CompoundTag loadSchematicNBT(String filePath) throws IOException {
+        File file = new File(filePath);
+        if (!file.exists()) {
+            throw new IOException(Component.translatable("message.preview.nbt_loader.file_not_found", filePath).getString());
+        }
+
+        try (FileInputStream fis = new FileInputStream(file)) {
+            return NbtIo.readCompressed(fis);
+        }
+    }
+
+    public static SchematicSize readSchematicSize(CompoundTag nbtData) {
+        if (nbtData.contains("Schematic", 10)) {
+            return readSchematicSize(nbtData.getCompound("Schematic"));
+        }
+
+        if (nbtData.contains("size", 9)) {
+            ListTag size = nbtData.getList("size", 3);
+            if (size.size() >= 3) {
+                return new SchematicSize(Math.max(1, size.getInt(0)), Math.max(1, size.getInt(1)), Math.max(1, size.getInt(2)));
+            }
+        }
+
+        if (nbtData.contains("Width") && nbtData.contains("Height") && nbtData.contains("Length")) {
+            return new SchematicSize(Math.max(1, nbtData.getInt("Width")), Math.max(1, nbtData.getInt("Height")), Math.max(1, nbtData.getInt("Length")));
+        }
+
+        return null;
+    }
+
     public static List<SchematicBlock> loadSchematicBlocks(String filePath) {
         File file = new File(filePath);
         if (!file.exists()) {
@@ -73,77 +106,12 @@ public class SchematicNBTLoader {
                 CompoundTag blockTag = blocksList.getCompound(i);
 
                 try {
-                    int x = 0, y = 0, z = 0;
-
-                    if (blockTag.contains("x", 3)) {
-                        x = blockTag.getInt("x");
-                    } else if (blockTag.contains("posX", 3)) {
-                        x = blockTag.getInt("posX");
-                    } else if (blockTag.contains("X", 3)) {
-                        x = blockTag.getInt("X");
-                    }
-
-                    if (blockTag.contains("y", 3)) {
-                        y = blockTag.getInt("y");
-                    } else if (blockTag.contains("posY", 3)) {
-                        y = blockTag.getInt("posY");
-                    } else if (blockTag.contains("Y", 3)) {
-                        y = blockTag.getInt("Y");
-                    }
-
-                    if (blockTag.contains("z", 3)) {
-                        z = blockTag.getInt("z");
-                    } else if (blockTag.contains("posZ", 3)) {
-                        z = blockTag.getInt("posZ");
-                    } else if (blockTag.contains("Z", 3)) {
-                        z = blockTag.getInt("Z");
-                    }
-
-                    if (blockTag.contains("pos", 9)) {
-                        ListTag posList = blockTag.getList("pos", 3);
-                        x = posList.getInt(0);
-                        y = posList.getInt(1);
-                        z = posList.getInt(2);
-                    }
-
-                    BlockState state = null;
-
-                    try {
-                        if (blockTag.contains("state", 3) && !palette.isEmpty()) {
-                            int stateIndex = blockTag.getInt("state");
-                            if (stateIndex >= 0 && stateIndex < palette.size()) {
-                                CompoundTag stateTag = palette.getCompound(stateIndex);
-                                state = parseBlockState(stateTag);
-                            }
-                        } else if (blockTag.contains("state", 8)) {
-                            String blockName = blockTag.getString("state");
-                            state = parseBlockName(blockName);
-                        } else if (blockTag.contains("nbt", 10)) {
-                            CompoundTag nbt = blockTag.getCompound("nbt");
-                            if (nbt.contains("id", 8)) {
-                                String blockName = nbt.getString("id");
-                                state = parseBlockName(blockName);
-                            }
-                        } else if (blockTag.contains("state", 10)) {
-                            CompoundTag stateTag = blockTag.getCompound("state");
-                            state = parseBlockState(stateTag);
-                        } else if (blockTag.contains("Name", 8)) {
-                            CompoundTag stateTag = new CompoundTag();
-                            stateTag.putString("Name", Objects.requireNonNull(blockTag.getString("Name")));
-                            if (blockTag.contains("Properties", 10)) {
-                                stateTag.put("Properties", Objects.requireNonNull(blockTag.getCompound("Properties")));
-                            }
-                            state = parseBlockState(stateTag);
-                        }
-
-                        if (state != null) {
-                            blocks.add(new SchematicBlock(new BlockPos(x, y, z), state));
-                            validCount++;
-                        } else {
-                            Simukraft.LOGGER.warn(Component.translatable("message.preview.nbt_loader.state_parse_failed", blockTag).getString());
-                        }
-                    } catch (Exception e) {
-                        Simukraft.LOGGER.error(Component.translatable("message.preview.nbt_loader.state_parse_error", e.getMessage()).getString());
+                    SchematicBlock block = parseSchematicBlock(blockTag, palette);
+                    if (block != null) {
+                        blocks.add(block);
+                        validCount++;
+                    } else {
+                        Simukraft.LOGGER.warn(Component.translatable("message.preview.nbt_loader.state_parse_failed", blockTag).getString());
                     }
                 } catch (Exception e) {
                     Simukraft.LOGGER.error(Component.translatable("message.preview.nbt_loader.block_parse_error", i, e.getMessage()).getString());
@@ -161,6 +129,79 @@ public class SchematicNBTLoader {
 
         Simukraft.LOGGER.info(Component.translatable("message.preview.nbt_loader.parse_complete", blocks.size()).getString());
         return blocks;
+    }
+
+    public static SchematicBlock parseSchematicBlock(CompoundTag blockTag, ListTag palette) {
+        BlockPos pos = readBlockPos(blockTag);
+        BlockState state = readBlockState(blockTag, palette);
+        return state != null ? new SchematicBlock(pos, state) : null;
+    }
+
+    private static BlockPos readBlockPos(CompoundTag blockTag) {
+        int x = 0, y = 0, z = 0;
+
+        if (blockTag.contains("x", 3)) {
+            x = blockTag.getInt("x");
+        } else if (blockTag.contains("posX", 3)) {
+            x = blockTag.getInt("posX");
+        } else if (blockTag.contains("X", 3)) {
+            x = blockTag.getInt("X");
+        }
+
+        if (blockTag.contains("y", 3)) {
+            y = blockTag.getInt("y");
+        } else if (blockTag.contains("posY", 3)) {
+            y = blockTag.getInt("posY");
+        } else if (blockTag.contains("Y", 3)) {
+            y = blockTag.getInt("Y");
+        }
+
+        if (blockTag.contains("z", 3)) {
+            z = blockTag.getInt("z");
+        } else if (blockTag.contains("posZ", 3)) {
+            z = blockTag.getInt("posZ");
+        } else if (blockTag.contains("Z", 3)) {
+            z = blockTag.getInt("Z");
+        }
+
+        if (blockTag.contains("pos", 9)) {
+            ListTag posList = blockTag.getList("pos", 3);
+            x = posList.getInt(0);
+            y = posList.getInt(1);
+            z = posList.getInt(2);
+        }
+
+        return new BlockPos(x, y, z);
+    }
+
+    private static BlockState readBlockState(CompoundTag blockTag, ListTag palette) {
+        try {
+            if (blockTag.contains("state", 3) && !palette.isEmpty()) {
+                int stateIndex = blockTag.getInt("state");
+                if (stateIndex >= 0 && stateIndex < palette.size()) {
+                    return parseBlockState(palette.getCompound(stateIndex));
+                }
+            } else if (blockTag.contains("state", 8)) {
+                return parseBlockName(blockTag.getString("state"));
+            } else if (blockTag.contains("nbt", 10)) {
+                CompoundTag nbt = blockTag.getCompound("nbt");
+                if (nbt.contains("id", 8)) {
+                    return parseBlockName(nbt.getString("id"));
+                }
+            } else if (blockTag.contains("state", 10)) {
+                return parseBlockState(blockTag.getCompound("state"));
+            } else if (blockTag.contains("Name", 8)) {
+                CompoundTag stateTag = new CompoundTag();
+                stateTag.putString("Name", Objects.requireNonNull(blockTag.getString("Name")));
+                if (blockTag.contains("Properties", 10)) {
+                    stateTag.put("Properties", Objects.requireNonNull(blockTag.getCompound("Properties")));
+                }
+                return parseBlockState(stateTag);
+            }
+        } catch (Exception e) {
+            Simukraft.LOGGER.error(Component.translatable("message.preview.nbt_loader.state_parse_error", e.getMessage()).getString());
+        }
+        return null;
     }
 
     private static BlockState parseBlockState(CompoundTag stateTag) {

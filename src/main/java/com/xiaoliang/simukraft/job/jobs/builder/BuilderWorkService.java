@@ -132,13 +132,6 @@ public class BuilderWorkService extends AbstractWorkService {
                 taskInfo.cost,
                 level
             );
-            int totalBlocks = tempTask.getTotalBlocks();
-
-            if (taskInfo.currentBlockIndex >= totalBlocks) {
-                ConstructionTaskData.removeTask(server, npc.getUUID());
-                return;
-            }
-
             ConstructionTask task = tempTask;
             task.setCurrentBlockIndex(taskInfo.currentBlockIndex);
             npc.setConstructionTask(task);
@@ -147,7 +140,7 @@ public class BuilderWorkService extends AbstractWorkService {
                 npc.getUUID().toString().substring(0, 8),
                 taskInfo.displayName,
                 taskInfo.currentBlockIndex,
-                task.getTotalBlocks());
+                task.getTotalBlocksDisplay());
 
         } catch (Exception e) {
             Simukraft.LOGGER.error("[BuilderWorkService] 恢复建造任务失?- NPC: {}",

@@ -382,7 +382,7 @@ public class LunchBreakManager {
                 npc.getFullName(),
                 taskInfo.displayName,
                 taskInfo.currentBlockIndex,
-                task.getTotalBlocks());
+                task.getTotalBlocksDisplay());
         } catch (Exception e) {
             Simukraft.LOGGER.error("[LunchBreakManager] 恢复建造任务时出错 - NPC: {}", npc.getFullName(), e);
         }

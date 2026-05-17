@@ -28,6 +28,9 @@ public record BuildingNBTRequestPacket(String buildingName, String category) {
 
             // 从BuildingDataManager获取NBT数据
             CompoundTag buildingData = BuildingDataManager.loadBuildingData(buildingName, category);
+            if (context.getSender() == null || buildingData == null) {
+                return;
+            }
 
             // 发送响应包给客户端
             BuildingNBTResponsePacket response = new BuildingNBTResponsePacket(buildingName, category, buildingData);

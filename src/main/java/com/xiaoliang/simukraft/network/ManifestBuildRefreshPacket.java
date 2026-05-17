@@ -91,7 +91,7 @@ public class ManifestBuildRefreshPacket {
 
         Map<String, Boolean> checkedByItemId = ManifestItem.getCheckedByItemId(refreshedStack);
 
-        Map<String, Integer> materials = packet.remainingOnly
+        Map<String, Integer> materials = packet.remainingOnly || !task.isInitialized()
             ? collectRemainingMaterials(task, level)
             : task.getRequiredMaterials();
         writeManifestMaterials(tag, materials);

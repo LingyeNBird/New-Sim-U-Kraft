@@ -956,7 +956,7 @@ public class NPCRestHandler {
                 npc.getFullName(),
                 taskInfo.displayName,
                 taskInfo.currentBlockIndex,
-                task.getTotalBlocks());
+                task.getTotalBlocksDisplay());
 
         } catch (Exception e) {
             LOGGER.error("[NPCRestHandler] 恢复建造任务失败 - NPC: {}",

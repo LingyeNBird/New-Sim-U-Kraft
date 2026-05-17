@@ -10,12 +10,14 @@ import com.xiaoliang.simukraft.building.IndustrialBuildingManager;
 import com.xiaoliang.simukraft.entity.CustomEntity;
 import com.xiaoliang.simukraft.entity.FloatingBuildBoxEntity;
 import com.xiaoliang.simukraft.entity.WorkStatus;
+import com.xiaoliang.simukraft.entity.ai.path.NPCPathNavigator;
 import com.xiaoliang.simukraft.init.ModEntities;
 import com.xiaoliang.simukraft.utils.FileUtils;
 import com.xiaoliang.simukraft.utils.NPCDataManager;
 import com.xiaoliang.simukraft.utils.NPCFamilyManager;
 import com.xiaoliang.simukraft.utils.NPCFoodMarket;
 import com.xiaoliang.simukraft.utils.NPCMarriageManager;
+import com.xiaoliang.simukraft.utils.NPCTaskScheduler;
 import com.xiaoliang.simukraft.world.CityData;
 import com.xiaoliang.simukraft.world.OfficialInvitationService;
 import net.minecraft.commands.CommandSourceStack;
@@ -520,6 +522,14 @@ public class CommandSimukraft {
                         )
                     )
                 )
+                .then(Commands.literal("path")
+                    .then(Commands.literal("queue")
+                        .executes(context -> executePathQueueStatus(context.getSource())))
+                    .then(Commands.literal("stop")
+                        .executes(context -> executePathQueueStop(context.getSource())))
+                    .then(Commands.literal("pause")
+                        .executes(context -> executePathQueuePause(context.getSource())))
+                )
                 .then(GotoRouteCommandHelper.buildGotoCommand())
                 .then(Commands.literal("jh")
                     .executes(context -> executeMarriageDebug(context.getSource())))
@@ -583,6 +593,75 @@ public class CommandSimukraft {
             }
         }
         return 0;
+    }
+
+    private static int executePathQueueStatus(CommandSourceStack source) {
+        int activePathfinding = 0;
+        int npcCount = 0;
+
+        for (CustomEntity npc : NPCTaskScheduler.getAllNPCs(source.getServer())) {
+            if (npc == null || !npc.isAlive()) {
+                continue;
+            }
+            npcCount++;
+            NPCPathNavigator navigator = npc.getNPCPathNavigator();
+            if (navigator != null && navigator.isPathfinding()) {
+                activePathfinding++;
+            }
+        }
+
+        int queuedAsyncTasks = NPCPathNavigator.getQueuedAsyncPathfindingTasks();
+        long pauseRemainingSeconds = (NPCPathNavigator.getPathfindingPauseRemainingMillis() + 999L) / 1000L;
+        source.sendSuccess(() -> Component.literal(
+                "§a当前寻路状态: 活跃寻路NPC=" + activePathfinding
+                        + ", 异步寻路队列=" + queuedAsyncTasks
+                        + ", 已加载NPC=" + npcCount
+                        + ", 暂停剩余=" + pauseRemainingSeconds + "秒"
+        ), false);
+        return activePathfinding + queuedAsyncTasks;
+    }
+
+    private static int executePathQueueStop(CommandSourceStack source) {
+        int stopped = stopActivePathfinding(source);
+        int cancelledQueuedTasks = NPCPathNavigator.cancelQueuedAsyncPathfindingTasks();
+
+        source.sendSuccess(() -> Component.literal(
+                "§a已中止当前所有NPC寻路: 活跃寻路NPC=" + stopped
+                        + ", 取消异步寻路队列=" + cancelledQueuedTasks
+        ), true);
+        return stopped + cancelledQueuedTasks;
+    }
+
+    private static int executePathQueuePause(CommandSourceStack source) {
+        final long pauseMillis = 5L * 60L * 1000L;
+
+        NPCPathNavigator.pauseAllPathfinding(pauseMillis);
+        int stopped = stopActivePathfinding(source);
+        int cancelledQueuedTasks = NPCPathNavigator.cancelQueuedAsyncPathfindingTasks();
+
+        final int finalStopped = stopped;
+        final int finalCancelledQueuedTasks = cancelledQueuedTasks;
+        source.sendSuccess(() -> Component.literal(
+                "§a已暂停所有NPC自定义寻路5分钟，并停止当前寻路NPC: " + finalStopped
+                        + "，取消异步寻路队列: " + finalCancelledQueuedTasks
+        ), true);
+        return finalStopped + finalCancelledQueuedTasks;
+    }
+
+    private static int stopActivePathfinding(CommandSourceStack source) {
+        int stopped = 0;
+        for (CustomEntity npc : NPCTaskScheduler.getAllNPCs(source.getServer())) {
+            if (npc == null || !npc.isAlive()) {
+                continue;
+            }
+            NPCPathNavigator navigator = npc.getNPCPathNavigator();
+            if (navigator != null && navigator.isPathfinding()) {
+                stopped++;
+            }
+            npc.stopNewPathfinder();
+            npc.getNavigation().stop();
+        }
+        return stopped;
     }
 
     private static int executeMarriageDebug(CommandSourceStack source) {

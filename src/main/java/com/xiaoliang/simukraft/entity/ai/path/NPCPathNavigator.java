@@ -14,8 +14,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -28,10 +28,13 @@ public class NPCPathNavigator {
     private final NPCPathFinder pathFinder;
     private final NPCMoveController moveController;
     
-    private static final ExecutorService pathfindingExecutor = Executors.newFixedThreadPool(2);
+    private static final ThreadPoolExecutor pathfindingExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(2);
     private static final int MAX_PATH_RECALCULATIONS_PER_TICK = 2;
     private static final ConcurrentHashMap<Long, AtomicInteger> PATH_RECALCULATION_BUDGETS = new ConcurrentHashMap<>();
     private static volatile long lastBudgetCleanupTick = Long.MIN_VALUE;
+    private static volatile long pathfindingPausedUntilMillis = 0L;
+    private static final AtomicInteger pathfindingGeneration = new AtomicInteger(0);
+    private static final Set<CompletableFuture<Boolean>> pendingAsyncPathfindingTasks = ConcurrentHashMap.newKeySet();
     
     private static final int PATH_RECALCULATE_INTERVAL = 20;
     private static final double PATH_RECALCULATE_DISTANCE = 2.0;
@@ -87,6 +90,11 @@ public class NPCPathNavigator {
     }
     
     public boolean moveTo(double x, double y, double z, double reachDistance) {
+        if (isPathfindingPaused()) {
+            stop();
+            return false;
+        }
+
         BlockPos target = BlockPos.containing(x, y, z);
         Vec3 preciseTarget = new Vec3(x, y, z);
         
@@ -111,7 +119,19 @@ public class NPCPathNavigator {
     }
     
     public CompletableFuture<Boolean> moveToAsync(BlockPos pos, double reachDistance) {
-        return CompletableFuture.supplyAsync(() -> moveTo(pos, reachDistance), pathfindingExecutor);
+        if (isPathfindingPaused()) {
+            return CompletableFuture.completedFuture(false);
+        }
+        int generation = pathfindingGeneration.get();
+        CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
+            if (generation != pathfindingGeneration.get() || isPathfindingPaused()) {
+                return false;
+            }
+            return moveTo(pos, reachDistance);
+        }, pathfindingExecutor);
+        pendingAsyncPathfindingTasks.add(future);
+        future.whenComplete((result, throwable) -> pendingAsyncPathfindingTasks.remove(future));
+        return future;
     }
     
     public void stop() {
@@ -129,6 +149,11 @@ public class NPCPathNavigator {
     }
     
     public void tick() {
+        if (isPathfindingPaused()) {
+            stop();
+            return;
+        }
+
         if (npc.isSleeping()) {
             stop();
             return;
@@ -563,5 +588,32 @@ public class NPCPathNavigator {
     
     public static void shutdown() {
         pathfindingExecutor.shutdown();
+    }
+
+    public static void pauseAllPathfinding(long durationMillis) {
+        pathfindingPausedUntilMillis = Math.max(pathfindingPausedUntilMillis, System.currentTimeMillis() + Math.max(0L, durationMillis));
+    }
+
+    public static boolean isPathfindingPaused() {
+        return System.currentTimeMillis() < pathfindingPausedUntilMillis;
+    }
+
+    public static long getPathfindingPauseRemainingMillis() {
+        return Math.max(0L, pathfindingPausedUntilMillis - System.currentTimeMillis());
+    }
+
+    public static int getQueuedAsyncPathfindingTasks() {
+        return pendingAsyncPathfindingTasks.size();
+    }
+
+    public static int cancelQueuedAsyncPathfindingTasks() {
+        int queuedTasks = pendingAsyncPathfindingTasks.size();
+        pathfindingGeneration.incrementAndGet();
+        for (CompletableFuture<Boolean> future : pendingAsyncPathfindingTasks) {
+            future.cancel(false);
+        }
+        pendingAsyncPathfindingTasks.clear();
+        pathfindingExecutor.purge();
+        return queuedTasks;
     }
 }

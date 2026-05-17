@@ -266,6 +266,10 @@ public class CustomEntity extends PathfinderMob {
      * @return 是否成功开始寻路
      */
     public boolean moveToWithNewPathfinder(BlockPos pos) {
+        if (com.xiaoliang.simukraft.entity.ai.path.NPCPathNavigator.isPathfindingPaused()) {
+            stopNewPathfinder();
+            return false;
+        }
         if (npcPathNavigator != null) {
             if (!isPathTargetInsideCityTerritory(pos)) {
                 return false;
@@ -286,6 +290,10 @@ public class CustomEntity extends PathfinderMob {
      * @return 是否成功开始寻路
      */
     public boolean moveToWithNewPathfinder(double x, double y, double z) {
+        if (com.xiaoliang.simukraft.entity.ai.path.NPCPathNavigator.isPathfindingPaused()) {
+            stopNewPathfinder();
+            return false;
+        }
         if (npcPathNavigator != null) {
             if (!isPathTargetInsideCityTerritory(BlockPos.containing(x, y, z))) {
                 return false;
@@ -299,6 +307,10 @@ public class CustomEntity extends PathfinderMob {
     }
 
     public boolean moveToWithNewPathfinder(BlockPos pos, double reachDistance) {
+        if (com.xiaoliang.simukraft.entity.ai.path.NPCPathNavigator.isPathfindingPaused()) {
+            stopNewPathfinder();
+            return false;
+        }
         if (npcPathNavigator != null) {
             if (!isPathTargetInsideCityTerritory(pos)) {
                 return false;
@@ -312,6 +324,10 @@ public class CustomEntity extends PathfinderMob {
     }
 
     public boolean moveToWithNewPathfinder(double x, double y, double z, double reachDistance) {
+        if (com.xiaoliang.simukraft.entity.ai.path.NPCPathNavigator.isPathfindingPaused()) {
+            stopNewPathfinder();
+            return false;
+        }
         if (npcPathNavigator != null) {
             if (!isPathTargetInsideCityTerritory(BlockPos.containing(x, y, z))) {
                 return false;

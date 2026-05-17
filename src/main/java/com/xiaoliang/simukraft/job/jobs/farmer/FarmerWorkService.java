@@ -2,8 +2,10 @@ package com.xiaoliang.simukraft.job.jobs.farmer;
 
 import com.xiaoliang.simukraft.entity.CustomEntity;
 import com.xiaoliang.simukraft.entity.WorkStatus;
+import com.xiaoliang.simukraft.farmland.CropRegistry;
 import com.xiaoliang.simukraft.job.api.JobContext;
 import com.xiaoliang.simukraft.job.core.services.AbstractWorkService;
+import com.xiaoliang.simukraft.utils.ContainerUtils;
 import com.xiaoliang.simukraft.utils.NPCDataManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -11,6 +13,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.CropBlock;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.Map;
 import java.util.Objects;
@@ -353,6 +357,55 @@ public class FarmerWorkService extends AbstractWorkService {
                 || block == net.minecraft.world.level.block.Blocks.MELON_STEM;
     }
 
+    private boolean isBreakHarvestCrop(BlockState state) {
+        var block = state.getBlock();
+        return block == net.minecraft.world.level.block.Blocks.WHEAT
+                || block == net.minecraft.world.level.block.Blocks.CARROTS
+                || block == net.minecraft.world.level.block.Blocks.POTATOES
+                || block == net.minecraft.world.level.block.Blocks.BEETROOTS;
+    }
+
+    private boolean isBreakHarvestCropMature(BlockState state) {
+        if (!isBreakHarvestCrop(state)) {
+            return false;
+        }
+        if (state.getBlock() instanceof CropBlock cropBlock) {
+            return cropBlock.isMaxAge(state);
+        }
+        return isAgeAtMaximum(state);
+    }
+
+    private boolean isAgeAtMaximum(BlockState state) {
+        for (var property : state.getProperties()) {
+            if (property.getName().equals("age")) {
+                Comparable<?> value = state.getValue(property);
+                if (!(value instanceof Integer age)) {
+                    return false;
+                }
+
+                int maxAge = 0;
+                for (var possibleValue : property.getPossibleValues()) {
+                    if (possibleValue instanceof Integer intVal && intVal > maxAge) {
+                        maxAge = intVal;
+                    }
+                }
+                return age >= maxAge;
+            }
+        }
+        return false;
+    }
+
+    private boolean isFruitBlockForSelectedCrop(Block block, String selectedCrop) {
+        String normalizedCrop = CropRegistry.normalizeSelectionId(selectedCrop);
+        if ("minecraft:pumpkin_seeds".equals(normalizedCrop)) {
+            return block == net.minecraft.world.level.block.Blocks.PUMPKIN;
+        }
+        if ("minecraft:melon_seeds".equals(normalizedCrop)) {
+            return block == net.minecraft.world.level.block.Blocks.MELON;
+        }
+        return false;
+    }
+
     /**
      * 检查是否为右键采摘作物（如浆果、番茄等）
      * menglannnn: 识别需要右键采摘的作物类型
@@ -384,23 +437,7 @@ public class FarmerWorkService extends AbstractWorkService {
         if (state.getBlock() == net.minecraft.world.level.block.Blocks.SWEET_BERRY_BUSH) {
             return state.getValue(net.minecraft.world.level.block.SweetBerryBushBlock.AGE) >= 2;
         }
-        // 其他作物检查AGE属性是否为最大值
-        for (var property : state.getProperties()) {
-            if (property.getName().equals("age")) {
-                Comparable<?> value = state.getValue(property);
-                if (value instanceof Integer age) {
-                    // 获取最大可能值
-                    int maxAge = 0;
-                    for (var possibleValue : property.getPossibleValues()) {
-                        if (possibleValue instanceof Integer intVal && intVal > maxAge) {
-                            maxAge = intVal;
-                        }
-                    }
-                    return age >= maxAge;
-                }
-            }
-        }
-        return false;
+        return isAgeAtMaximum(state);
     }
 
     /**
@@ -429,7 +466,7 @@ public class FarmerWorkService extends AbstractWorkService {
         BlockPos farmlandBoxPos = getFarmlandBoxForNpc(level.getServer(), npc.getUUID());
         if (farmlandBoxPos == null) return;
 
-        BlockPos chestPos = com.xiaoliang.simukraft.world.FarmlandHiredData.getBoundChest(farmlandBoxPos);
+        BlockPos chestPos = com.xiaoliang.simukraft.utils.FarmlandManager.resolveOrBindNearestChest(level, farmlandBoxPos);
 
         // 根据作物类型确定掉落物
         java.util.List<net.minecraft.world.item.ItemStack> drops = new java.util.ArrayList<>();
@@ -455,10 +492,11 @@ public class FarmerWorkService extends AbstractWorkService {
         for (net.minecraft.world.item.ItemStack drop : drops) {
             if (!drop.isEmpty()) {
                 if (chestPos != null) {
-                    // 尝试存入箱子
-                    if (!insertIntoChest(level, chestPos, drop)) {
-                        // 箱子满了，丢在地上
-                        spawnItemAtPos(level, pos, drop);
+                    int inserted = ContainerUtils.insertItem(level, chestPos, drop);
+                    if (inserted < drop.getCount()) {
+                        ItemStack remainder = drop.copy();
+                        remainder.setCount(drop.getCount() - inserted);
+                        spawnItemAtPos(level, pos, remainder);
                     }
                 } else {
                     // 没有绑定箱子，丢在地上
@@ -492,34 +530,6 @@ public class FarmerWorkService extends AbstractWorkService {
     }
 
     /**
-     * 将物品存入箱子
-     * menglannnn: 尝试将物品插入到指定位置的箱子中
-     */
-    /**
-     * 将物品存入箱子
-     * menglannnn: 尝试将物品插入到指定位置的箱子中
-     */
-    private boolean insertIntoChest(ServerLevel level, BlockPos chestPos, net.minecraft.world.item.ItemStack stack) {
-        var blockEntity = level.getBlockEntity(chestPos);
-        if (!(blockEntity instanceof net.minecraft.world.Container container)) {
-            return false;
-        }
-
-        for (int i = 0; i < container.getContainerSize(); i++) {
-            var slotStack = container.getItem(i);
-            if (slotStack.isEmpty()) {
-                container.setItem(i, stack.copy());
-                return true;
-            } else if (ItemStack.isSameItemSameTags(slotStack, stack)
-                    && slotStack.getCount() + stack.getCount() <= slotStack.getMaxStackSize()) {
-                slotStack.grow(stack.getCount());
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
      * 在指定位置生成物品实体
      */
     private void spawnItemAtPos(ServerLevel level, BlockPos pos, net.minecraft.world.item.ItemStack stack) {
@@ -545,51 +555,83 @@ public class FarmerWorkService extends AbstractWorkService {
         String selectedCrop = com.xiaoliang.simukraft.world.FarmlandHiredData.getSelectedCrop(farmlandBoxPos);
         if (selectedCrop == null) selectedCrop = "wheat";
 
-        BlockPos min = plot.minPos();
-        BlockPos max = plot.maxPos();
+        for (BlockPos soilPos : plot.positions()) {
+            BlockPos cropPos = soilPos.above();
+            var state = level.getBlockState(cropPos);
+            var block = state.getBlock();
 
-        for (int x = min.getX(); x <= max.getX(); x++) {
-            for (int z = min.getZ(); z <= max.getZ(); z++) {
-                for (int y = min.getY(); y <= max.getY(); y++) {
-                    BlockPos pos = new BlockPos(x, y, z);
-                    var state = level.getBlockState(pos);
-                    var block = state.getBlock();
-
-                    // 处理右键采摘作物
-                    if (isRightClickHarvestCrop(block)) {
-                        if (isRightClickCropMature(state)) {
-                            performRightClickHarvest(npc, pos, level);
-                        }
-                    }
-                    // 处理普通破坏式采集作物
-                    else if (isMatureCrop(block)) {
-                        level.destroyBlock(pos, false);
-
-                        BlockPos soilPos = pos.below();
-                        var soilState = level.getBlockState(soilPos);
-                        if (soilState.getBlock() instanceof net.minecraft.world.level.block.FarmBlock) {
-                            net.minecraft.world.item.ItemStack seed = getSeedStack(selectedCrop);
-                            if (!seed.isEmpty()) {
-                                level.setBlockAndUpdate(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
-                                level.setBlockAndUpdate(soilPos, net.minecraft.world.level.block.Blocks.FARMLAND.defaultBlockState());
-                            }
-                        }
-                    }
+            if (isRightClickHarvestCrop(block)) {
+                if (isRightClickCropMature(state)) {
+                    performRightClickHarvest(npc, cropPos, level);
                 }
+                continue;
+            }
+
+            if (isBreakHarvestCropMature(state)) {
+                harvestBreakCropAndReplant(npc, farmlandBoxPos, cropPos, soilPos, state, selectedCrop, level);
+                continue;
+            }
+
+            if (isFruitBlockForSelectedCrop(block, selectedCrop)) {
+                harvestBlockToStorageOrGround(npc, farmlandBoxPos, cropPos, state, level);
             }
         }
     }
-    
+
+    private void harvestBreakCropAndReplant(CustomEntity npc, BlockPos farmlandBoxPos, BlockPos cropPos, BlockPos soilPos,
+                                            BlockState cropState, String selectedCrop, ServerLevel level) {
+        if (!(level.getBlockState(soilPos).getBlock() instanceof net.minecraft.world.level.block.FarmBlock)) {
+            return;
+        }
+
+        harvestBlockToStorageOrGround(npc, farmlandBoxPos, cropPos, cropState, level);
+
+        ItemStack seed = getSeedStack(selectedCrop);
+        Block cropBlock = CropRegistry.resolve(selectedCrop)
+                .map(com.xiaoliang.simukraft.farmland.CropDefinition::cropBlock)
+                .orElse(null);
+        BlockPos chestPos = com.xiaoliang.simukraft.utils.FarmlandManager.resolveOrBindNearestChest(level, farmlandBoxPos);
+        if (cropBlock != null && chestPos != null && !seed.isEmpty() && ContainerUtils.consumeItem(level, chestPos, seed)) {
+            level.setBlockAndUpdate(soilPos, net.minecraft.world.level.block.Blocks.FARMLAND.defaultBlockState());
+            level.setBlockAndUpdate(cropPos, cropBlock.defaultBlockState());
+        }
+    }
+
+    private void harvestBlockToStorageOrGround(CustomEntity npc, BlockPos farmlandBoxPos, BlockPos pos,
+                                               BlockState state, ServerLevel level) {
+        var drops = net.minecraft.world.level.block.Block.getDrops(
+                state,
+                level,
+                pos,
+                null,
+                npc,
+                net.minecraft.world.item.ItemStack.EMPTY
+        );
+        level.destroyBlock(pos, false);
+
+        BlockPos chestPos = com.xiaoliang.simukraft.utils.FarmlandManager.resolveOrBindNearestChest(level, farmlandBoxPos);
+        for (ItemStack drop : drops) {
+            if (drop.isEmpty()) {
+                continue;
+            }
+            if (chestPos == null) {
+                spawnItemAtPos(level, pos, drop);
+                continue;
+            }
+
+            int inserted = ContainerUtils.insertItem(level, chestPos, drop);
+            if (inserted < drop.getCount()) {
+                ItemStack remainder = drop.copy();
+                remainder.setCount(drop.getCount() - inserted);
+                spawnItemAtPos(level, pos, remainder);
+            }
+        }
+    }
+
     private net.minecraft.world.item.ItemStack getSeedStack(String crop) {
-        return switch (crop.toLowerCase()) {
-            case "wheat" -> new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.WHEAT_SEEDS);
-            case "carrot" -> new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.CARROT);
-            case "potato" -> new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.POTATO);
-            case "beetroot" -> new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.BEETROOT_SEEDS);
-            case "pumpkin" -> new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.PUMPKIN_SEEDS);
-            case "melon" -> new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.MELON_SEEDS);
-            default -> new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.WHEAT_SEEDS);
-        };
+        return CropRegistry.resolve(crop)
+                .map(definition -> new ItemStack(definition.seedItem()))
+                .orElseGet(() -> new ItemStack(net.minecraft.world.item.Items.WHEAT_SEEDS));
     }
 
     private boolean needsPositionRecovery(CustomEntity npc, BlockPos farmlandBoxPos) {

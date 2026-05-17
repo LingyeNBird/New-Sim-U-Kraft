@@ -612,10 +612,12 @@ public class CommandSimukraft {
 
         int queuedAsyncTasks = NPCPathNavigator.getQueuedAsyncPathfindingTasks();
         long pauseRemainingSeconds = (NPCPathNavigator.getPathfindingPauseRemainingMillis() + 999L) / 1000L;
+        final int finalActivePathfinding = activePathfinding;
+        final int finalNpcCount = npcCount;
         source.sendSuccess(() -> Component.literal(
-                "§a当前寻路状态: 活跃寻路NPC=" + activePathfinding
+                "§a当前寻路状态: 活跃寻路NPC=" + finalActivePathfinding
                         + ", 异步寻路队列=" + queuedAsyncTasks
-                        + ", 已加载NPC=" + npcCount
+                        + ", 已加载NPC=" + finalNpcCount
                         + ", 暂停剩余=" + pauseRemainingSeconds + "秒"
         ), false);
         return activePathfinding + queuedAsyncTasks;

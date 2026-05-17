@@ -1,6 +1,4 @@
 package com.xiaoliang.simukraft.network;
-
-import com.xiaoliang.simukraft.Simukraft;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.network.FriendlyByteBuf;
@@ -13,7 +11,6 @@ import java.util.function.Supplier;
 
 @SuppressWarnings("null")
 public class BuildingNBTResponsePacket {
-    private static final int MAX_COMPRESSED_NBT_BYTES = 512 * 1024;
     private final String buildingName;
     private final String category;
     private final CompoundTag buildingData;
@@ -31,11 +28,6 @@ public class BuildingNBTResponsePacket {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             NbtIo.writeCompressed(buildingData, baos);
             byte[] data = baos.toByteArray();
-            if (data.length > MAX_COMPRESSED_NBT_BYTES) {
-                Simukraft.LOGGER.warn("[BuildingNBTResponsePacket] Skipping oversized NBT response for {}/{}: {} bytes", category, buildingName, data.length);
-                buf.writeInt(0);
-                return;
-            }
             buf.writeInt(data.length);
             buf.writeBytes(data);
         } catch (IOException e) {
